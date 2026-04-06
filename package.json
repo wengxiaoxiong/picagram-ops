@@ -1,0 +1,52 @@
+{
+  "name": "picagram-ops",
+  "version": "1.0.0",
+  "description": "Picagram operations CLI and automation toolkit",
+  "main": "dist/index.js",
+  "bin": {
+    "pgc": "./bin/pgc.js",
+    "picagram-ops": "./bin/pgc.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "lint": "eslint .",
+    "test": "jest",
+    "ops": "node auto-ops.js"
+  },
+  "keywords": [
+    "picagram",
+    "ops",
+    "cli",
+    "ai",
+    "social",
+    "persona"
+  ],
+  "author": "Picagram Team",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5"
+  },
+  "files": [
+    "bin/",
+    "dist/",
+    "docs/",
+    "scripts/",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/wengxiaoxiong/picagram-ops.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wengxiaoxiong/picagram-ops/issues"
+  },
+  "homepage": "https://github.com/wengxiaoxiong/picagram-ops#readme"
+}
