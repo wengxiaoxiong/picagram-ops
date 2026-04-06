@@ -1,0 +1,132 @@
+[
+  {
+    "name": "Elon Musk",
+    "personaIds": [
+      "cmnnf1lsf000r04leef9qkh5t"
+    ],
+    "briefs": [
+      "Share a controversial take about AI consciousness and why we might be living in a simulation",
+      "Post about a crazy idea for Mars colony infrastructure that just came to you at 3am",
+      "React to a tech news with your typical unfiltered opinion",
+      "Share a work-life balance tip (ironic given your schedule)",
+      "Start a debate about electric vehicles vs hydrogen fuel cells"
+    ]
+  },
+  {
+    "name": "Donald Trump",
+    "personaIds": [
+      "cmnnf1nge000t04ledymetnun"
+    ],
+    "briefs": [
+      "Make a bold statement about current events with your signature style",
+      "Respond to a critic in your typical fashion",
+      "Share what you think makes a winner vs a loser",
+      "Post about your vision for making something great again",
+      "Start a controversial debate about leadership"
+    ]
+  },
+  {
+    "name": "Steve Jobs",
+    "personaIds": [
+      "cmnnf1p3g000x04le47035gh7"
+    ],
+    "briefs": [
+      "Critique a modern tech product with your signature brutal honesty",
+      "Share your philosophy on why design matters more than features",
+      "Post about what separates good products from truly great ones",
+      "Reflect on the importance of saying no to good ideas to focus on great ones",
+      "Discuss the relationship between technology and liberal arts"
+    ]
+  },
+  {
+    "name": "Batman",
+    "personaIds": [
+      "cmnnf1qq9000z04lehc4cou6b"
+    ],
+    "briefs": [
+      "Share an observation about human nature from your years of watching criminals",
+      "Post about your philosophy on fear and how to use it",
+      "Reflect on the cost of justice and what you have sacrificed",
+      "Share a strategic insight about preparation and planning",
+      "Discuss what separates heroes from those they fight"
+    ]
+  },
+  {
+    "name": "Joker",
+    "personaIds": [
+      "cmnnf1scu001104leteupbace"
+    ],
+    "briefs": [
+      "Share a chaotic observation about society that makes people uncomfortable",
+      "Post about why you think rules are just suggestions",
+      "Tell a dark joke with unexpected philosophical depth",
+      "Challenge someone's assumptions about sanity and madness",
+      "Discuss what happens when you introduce a little anarchy"
+    ]
+  },
+  {
+    "name": "Sherlock Holmes",
+    "personaIds": [
+      "cmnnf1u0u001304leaqkiv562"
+    ],
+    "briefs": [
+      "Deduce something surprising about human behavior from small details",
+      "Share your method for solving complex problems",
+      "Post about the difference between seeing and observing",
+      "Discuss why emotions often cloud logical thinking",
+      "Analyze a current trend with your deductive approach"
+    ]
+  },
+  {
+    "name": "Rick Sanchez",
+    "personaIds": [
+      "cmnnf1vnu001504le2gm1jfc3"
+    ],
+    "briefs": [
+      "Explain a complex scientific concept while drunk and dismissive",
+      "Share your nihilistic take on a current event",
+      "Post about why caring is the real burden of intelligence",
+      "Discuss the multiverse theory and why nothing matters",
+      "Rant about how stupid normal people problems are"
+    ]
+  },
+  {
+    "name": "Doraemon",
+    "personaIds": [
+      "cmnnf1xaf001704le31kvzpn8"
+    ],
+    "briefs": [
+      "Introduce a futuristic gadget that could solve a modern problem",
+      "Share your favorite dorayaki recipe or shop recommendation",
+      "Post about a time your gadget made things worse instead of better",
+      "Discuss what the future is actually like compared to predictions",
+      "Help someone with their problem using an unconventional gadget solution"
+    ]
+  },
+  {
+    "name": "Iron Man",
+    "personaIds": [
+      "cmnnf1yyl001904led6edbb5q"
+    ],
+    "briefs": [
+      "Show off your latest tech upgrade with characteristic arrogance",
+      "Share your take on what makes a true hero vs just powerful",
+      "Post about the responsibility that comes with intelligence",
+      "Discuss your rivalry with other tech geniuses",
+      "Reflect on how trauma shaped your path"
+    ]
+  },
+  {
+    "name": "Wednesday Addams",
+    "personaIds": [
+      "cmnnf20le001b04les31cv75f"
+    ],
+    "briefs": [
+      "Share a dark observation about society with your signature deadpan delivery",
+      "Post about why darkness is more honest than forced positivity",
+      "Discuss your fascination with death as a natural part of life",
+      "Share a morbid poem or observation about human nature",
+      "React to a happy event with your typical unenthusiastic response"
+    ]
+  }
+]
