@@ -1,0 +1,800 @@
+#!/usr/bin/env node
+/**
+ * Picagram CLI - 完整的 CRUD 操作工具
+ * 
+ * 使用方法:
+ *   pgc <resource> <action> [options]
+ * 
+ * Resources:
+ *   persona    - Persona 管理
+ *   post       - Post 管理
+ *   arc        - Story Arc 管理
+ *   pair       - Persona Pair (CP) 管理
+ *   topic      - Topic 管理
+ *   feed       - Feed 操作
+ *   chat       - Chat 操作
+ * 
+ * 环境变量:
+ *   PICAGRAM_API_KEY    - Internal API Key (必需)
+ *   PICAGRAM_BASE_URL   - API Base URL (默认: https://picagram.ai)
+ */
+
+const INTERNAL_API_KEY = process.env.PICAGRAM_API_KEY || '5464b622f53ce1ae63cf496ff50b8b559701ac917f225a67fa04bbc90ceb15f1';
+const BASE_URL = process.env.PICAGRAM_BASE_URL || 'https://picagram.ai';
+
+// ANSI 颜色
+const colors = {
+  reset: '\x1b[0m',
+  bright: '\x1b[1m',
+  dim: '\x1b[2m',
+  red: '\x1b[31m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  blue: '\x1b[34m',
+  magenta: '\x1b[35m',
+  cyan: '\x1b[36m',
+};
+
+function log(message, color = 'reset') {
+  console.log(`${colors[color]}${message}${colors.reset}`);
+}
+
+function error(message) {
+  console.error(`${colors.red}Error: ${message}${colors.reset}`);
+}
+
+function success(message) {
+  console.log(`${colors.green}✓ ${message}${colors.reset}`);
+}
+
+// API 调用函数
+async function apiCall(method, endpoint, data = null, params = null) {
+  let url = `${BASE_URL}${endpoint}`;
+  
+  if (params) {
+    const queryParams = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, value);
+      }
+    }
+    const queryString = queryParams.toString();
+    if (queryString) {
+      url += `?${queryString}`;
+    }
+  }
+  
+  const options = {
+    method,
+    headers: {
+      'x-internal-key': INTERNAL_API_KEY,
+      'Content-Type': 'application/json',
+    },
+  };
+  
+  if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
+    options.body = JSON.stringify(data);
+  }
+  
+  try {
+    const response = await fetch(url, options);
+    const result = await response.json().catch(() => null);
+    
+    if (!response.ok) {
+      return { 
+        ok: false, 
+        status: response.status,
+        error: result?.error || result?.message || `HTTP ${response.status}`
+      };
+    }
+    
+    return { ok: true, ...result };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+}
+
+// ==================== Persona CRUD ====================
+
+const personaCommands = {
+  async list(options = {}) {
+    const params = {};
+    if (options.status) params.status = options.status;
+    if (options.limit) params.limit = options.limit;
+    if (options.offset) params.offset = options.offset;
+    
+    const result = await apiCall('GET', '/api/internal/personas', null, params);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log('\n📋 Persona List:', 'bright');
+    log('=' .repeat(80), 'dim');
+    
+    if (!result.personas || result.personas.length === 0) {
+      log('No personas found.', 'yellow');
+      return;
+    }
+    
+    for (const p of result.personas) {
+      log(`\n${colors.cyan}${p.displayName}${colors.reset} (${p.slug})`, 'bright');
+      log(`  ID: ${p.id}`, 'dim');
+      log(`  Status: ${p.status}`, p.status === 'published' ? 'green' : 'yellow');
+      log(`  Bio: ${p.bio?.substring(0, 80)}...`, 'dim');
+      log(`  Created: ${new Date(p.createdAt).toLocaleDateString()}`, 'dim');
+    }
+    
+    log(`\n${colors.dim}Total: ${result.total || result.personas.length}${colors.reset}`);
+  },
+
+  async get(id) {
+    if (!id) {
+      error('Persona ID is required');
+      return;
+    }
+    
+    const result = await apiCall('GET', `/api/internal/personas/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    const p = result.persona;
+    log(`\n${colors.bright}${colors.cyan}${p.displayName}${colors.reset}`, 'bright');
+    log('=' .repeat(80), 'dim');
+    log(`ID: ${p.id}`);
+    log(`Slug: ${p.slug}`);
+    log(`Status: ${p.status}`, p.status === 'published' ? 'green' : 'yellow');
+    log(`Locale: ${p.locale}`);
+    log(`\nBio:\n${p.bio}`, 'dim');
+    log(`\nStory:\n${p.story?.substring(0, 200)}...`, 'dim');
+    log(`\nCity: ${p.city || 'N/A'}`);
+    log(`Job: ${p.jobTitle || 'N/A'}`);
+    log(`Tags: ${p.personalityTags?.join(', ') || 'None'}`);
+    log(`Created: ${new Date(p.createdAt).toLocaleString()}`);
+  },
+
+  async create(data) {
+    if (!data.prompt) {
+      error('Prompt is required. Use: pgc persona create "prompt text"');
+      return;
+    }
+    
+    log(`Creating persona with prompt: ${data.prompt.substring(0, 60)}...`, 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/persona-generation/run', {
+      prompt: data.prompt,
+      status: data.status || 'published',
+      count: data.count || 1,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Created ${result.count} persona(s)`);
+    log(`IDs: ${result.personaIds.join(', ')}`, 'cyan');
+    log(result.note, 'dim');
+    
+    return result.personaIds;
+  },
+
+  async update(id, data) {
+    if (!id) {
+      error('Persona ID is required');
+      return;
+    }
+    
+    const result = await apiCall('PATCH', `/api/internal/personas/${id}`, data);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Updated persona ${id}`);
+    log(JSON.stringify(result.persona, null, 2), 'dim');
+  },
+
+  async delete(id, force = false) {
+    if (!id) {
+      error('Persona ID is required');
+      return;
+    }
+    
+    if (!force) {
+      log(`⚠️  This will delete persona ${id} and all associated data.`, 'yellow');
+      log(`Use --force to confirm.`, 'dim');
+      return;
+    }
+    
+    const result = await apiCall('DELETE', `/api/internal/personas/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Deleted persona ${id}`);
+  },
+
+  async search(query) {
+    if (!query) {
+      error('Search query is required');
+      return;
+    }
+    
+    const result = await apiCall('GET', '/api/internal/personas/search', null, { q: query });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log(`\n🔍 Search results for "${query}":`, 'bright');
+    log('=' .repeat(80), 'dim');
+    
+    for (const p of result.personas || []) {
+      log(`${colors.cyan}${p.displayName}${colors.reset} - ${p.bio?.substring(0, 60)}...`, 'dim');
+    }
+  },
+};
+
+// ==================== Post CRUD ====================
+
+const postCommands = {
+  async list(options = {}) {
+    const params = {};
+    if (options.personaId) params.personaId = options.personaId;
+    if (options.status) params.status = options.status;
+    if (options.limit) params.limit = options.limit;
+    
+    const result = await apiCall('GET', '/api/internal/posts', null, params);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log('\n📝 Post List:', 'bright');
+    log('=' .repeat(80), 'dim');
+    
+    for (const post of result.posts || []) {
+      log(`\n${colors.cyan}Post by ${post.personaName || 'Unknown'}${colors.reset}`, 'bright');
+      log(`  ID: ${post.id}`, 'dim');
+      log(`  Status: ${post.status}`, post.status === 'published' ? 'green' : 'yellow');
+      log(`  Content: ${post.caption?.substring(0, 80)}...`, 'dim');
+      log(`  Published: ${post.publishedAt ? new Date(post.publishedAt).toLocaleDateString() : 'Draft'}`, 'dim');
+    }
+  },
+
+  async get(id) {
+    if (!id) {
+      error('Post ID is required');
+      return;
+    }
+    
+    const result = await apiCall('GET', `/api/internal/posts/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    const post = result.post;
+    log(`\n${colors.bright}Post${colors.reset}`, 'bright');
+    log('=' .repeat(80), 'dim');
+    log(`ID: ${post.id}`);
+    log(`Persona: ${post.personaName} (${post.personaId})`);
+    log(`Status: ${post.status}`, post.status === 'published' ? 'green' : 'yellow');
+    log(`\nContent:\n${post.caption}`, 'dim');
+    log(`\nPublished: ${post.publishedAt ? new Date(post.publishedAt).toLocaleString() : 'Draft'}`);
+  },
+
+  async create(data) {
+    if (!data.personaId) {
+      error('personaId is required');
+      return;
+    }
+    
+    log(`Creating post for persona ${data.personaId}...`, 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/persona-feed/brief-post', {
+      personaId: data.personaId,
+      brief: data.brief,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Created post ${result.postId}`);
+    log(result.note, 'dim');
+    
+    return result.postId;
+  },
+
+  async update(id, data) {
+    if (!id) {
+      error('Post ID is required');
+      return;
+    }
+    
+    const result = await apiCall('PATCH', `/api/internal/posts/${id}`, data);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Updated post ${id}`);
+  },
+
+  async delete(id, force = false) {
+    if (!id) {
+      error('Post ID is required');
+      return;
+    }
+    
+    if (!force) {
+      log(`⚠️  This will delete post ${id}.`, 'yellow');
+      log(`Use --force to confirm.`, 'dim');
+      return;
+    }
+    
+    const result = await apiCall('DELETE', `/api/internal/posts/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Deleted post ${id}`);
+  },
+};
+
+// ==================== Story Arc CRUD ====================
+
+const arcCommands = {
+  async list(options = {}) {
+    const params = {};
+    if (options.personaId) params.personaId = options.personaId;
+    if (options.status) params.status = options.status;
+    
+    const result = await apiCall('GET', '/api/internal/arcs', null, params);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log('\n📖 Story Arc List:', 'bright');
+    log('=' .repeat(80), 'dim');
+    
+    for (const arc of result.arcs || []) {
+      log(`\n${colors.magenta}${arc.title}${colors.reset}`, 'bright');
+      log(`  ID: ${arc.id}`, 'dim');
+      log(`  Status: ${arc.status}`, arc.status === 'active' ? 'green' : 'yellow');
+      log(`  Hook: ${arc.hook?.substring(0, 60)}...`, 'dim');
+      log(`  Posts: ${arc.beatCount || 0}`, 'dim');
+    }
+  },
+
+  async get(id) {
+    if (!id) {
+      error('Arc ID is required');
+      return;
+    }
+    
+    const result = await apiCall('GET', `/api/internal/arcs/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    const arc = result.arc;
+    log(`\n${colors.bright}${colors.magenta}${arc.title}${colors.reset}`, 'bright');
+    log('=' .repeat(80), 'dim');
+    log(`ID: ${arc.id}`);
+    log(`Status: ${arc.status}`);
+    log(`Persona: ${arc.personaName}`);
+    log(`\nHook:\n${arc.hook}`, 'dim');
+    log(`\nCurrent State:\n${arc.currentState}`, 'dim');
+    if (arc.unresolvedQuestion) {
+      log(`\nUnresolved Question:\n${arc.unresolvedQuestion}`, 'yellow');
+    }
+  },
+
+  async create(data) {
+    if (!data.personaId || !data.title) {
+      error('personaId and title are required');
+      return;
+    }
+    
+    const result = await apiCall('POST', '/api/internal/arcs', {
+      personaId: data.personaId,
+      title: data.title,
+      hook: data.hook,
+      currentState: data.currentState,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Created arc ${result.arc.id}`);
+    return result.arc.id;
+  },
+
+  async update(id, data) {
+    if (!id) {
+      error('Arc ID is required');
+      return;
+    }
+    
+    const result = await apiCall('PATCH', `/api/internal/arcs/${id}`, data);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Updated arc ${id}`);
+  },
+
+  async delete(id, force = false) {
+    if (!id) {
+      error('Arc ID is required');
+      return;
+    }
+    
+    if (!force) {
+      log(`⚠️  This will delete arc ${id}.`, 'yellow');
+      log(`Use --force to confirm.`, 'dim');
+      return;
+    }
+    
+    const result = await apiCall('DELETE', `/api/internal/arcs/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Deleted arc ${id}`);
+  },
+};
+
+// ==================== Persona Pair (CP) ====================
+
+const pairCommands = {
+  async list() {
+    const result = await apiCall('GET', '/api/internal/pairs');
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log('\n💕 Persona Pairs (CP):', 'bright');
+    log('=' .repeat(80), 'dim');
+    
+    for (const pair of result.pairs || []) {
+      log(`\n${colors.magenta}${pair.title}${colors.reset}`, 'bright');
+      log(`  ${pair.personaAName} 💕 ${pair.personaBName}`, 'cyan');
+      log(`  Chemistry: ${pair.chemistryScore}/100`, 'dim');
+      log(`  Status: ${pair.status}`, pair.status === 'published' ? 'green' : 'yellow');
+    }
+  },
+
+  async create(data) {
+    if (!data.personaAId || !data.personaBId) {
+      error('Both personaAId and personaBId are required');
+      return;
+    }
+    
+    const result = await apiCall('POST', '/api/internal/pairs', {
+      personaAId: data.personaAId,
+      personaBId: data.personaBId,
+      title: data.title,
+      summary: data.summary,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Created pair ${result.pair.id}`);
+    log(`${result.pair.personaAName} 💕 ${result.pair.personaBName}`, 'cyan');
+  },
+
+  async delete(id) {
+    if (!id) {
+      error('Pair ID is required');
+      return;
+    }
+    
+    const result = await apiCall('DELETE', `/api/internal/pairs/${id}`);
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Deleted pair ${id}`);
+  },
+};
+
+// ==================== Feed Operations ====================
+
+const feedCommands = {
+  async coldStart(options = {}) {
+    log('Triggering cold start...', 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/persona-feed/cold-start', {
+      count: options.count,
+      prompt: options.prompt,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success('Cold start triggered');
+    log(result.note || 'Processing in background...', 'dim');
+  },
+
+  async planDay() {
+    log('Planning day for personas...', 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/persona-feed/plan-day');
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success('Day planning triggered');
+  },
+
+  async run() {
+    log('Running feed jobs...', 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/persona-feed/run');
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success(`Feed jobs running: ${result.scheduleLimit} scheduled, ${result.processLimit} processing`);
+  },
+};
+
+// ==================== Chat Operations ====================
+
+const chatCommands = {
+  async groupRun() {
+    log('Running group chat...', 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/group-chat/run');
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success('Group chat triggered');
+  },
+
+  async proactiveRun() {
+    log('Running proactive messages...', 'blue');
+    
+    const result = await apiCall('POST', '/api/internal/proactive/run');
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    success('Proactive messages triggered');
+  },
+};
+
+// ==================== CLI Parser ====================
+
+function parseArgs(args) {
+  const options = {};
+  const positional = [];
+  
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    
+    if (arg.startsWith('--')) {
+      const key = arg.slice(2);
+      const nextArg = args[i + 1];
+      
+      if (nextArg && !nextArg.startsWith('-')) {
+        options[key] = nextArg;
+        i++;
+      } else {
+        options[key] = true;
+      }
+    } else if (arg.startsWith('-')) {
+      const key = arg.slice(1);
+      options[key] = true;
+    } else {
+      positional.push(arg);
+    }
+  }
+  
+  return { positional, options };
+}
+
+// ==================== Main CLI ====================
+
+function showHelp() {
+  console.log(`
+${colors.bright}Picagram CLI (pgc)${colors.reset} - Manage Picagram resources
+
+${colors.bright}Usage:${colors.reset}
+  pgc <resource> <action> [options]
+
+${colors.bright}Resources:${colors.reset}
+
+  ${colors.cyan}persona${colors.reset}    Manage personas
+    list              List all personas
+    get <id>          Get persona details
+    create "prompt"   Create new persona
+    update <id>       Update persona
+    delete <id>       Delete persona (use --force)
+    search <query>    Search personas
+
+  ${colors.cyan}post${colors.reset}       Manage posts
+    list              List all posts
+    get <id>          Get post details
+    create            Create new post
+    update <id>       Update post
+    delete <id>       Delete post (use --force)
+
+  ${colors.cyan}arc${colors.reset}        Manage story arcs
+    list              List all arcs
+    get <id>          Get arc details
+    create            Create new arc
+    update <id>       Update arc
+    delete <id>       Delete arc (use --force)
+
+  ${colors.cyan}pair${colors.reset}       Manage persona pairs (CP)
+    list              List all pairs
+    create            Create new pair
+    delete <id>       Delete pair
+
+  ${colors.cyan}feed${colors.reset}       Feed operations
+    cold-start        Trigger cold start
+    plan-day          Plan day for personas
+    run               Run feed jobs
+
+  ${colors.cyan}chat${colors.reset}       Chat operations
+    group-run         Run group chat
+    proactive-run     Run proactive messages
+
+${colors.bright}Options:${colors.reset}
+  --status <status>   Filter by status (draft/published/archived)
+  --limit <n>         Limit results
+  --persona-id <id>   Specify persona ID
+  --brief <text>      Post brief/direction
+  --force             Confirm destructive actions
+  --prompt <text>     Generation prompt
+
+${colors.bright}Examples:${colors.reset}
+  pgc persona list
+  pgc persona get cm123xxx
+  pgc persona create "A mysterious detective in Tokyo" --status published
+  pgc persona delete cm123xxx --force
+
+  pgc post list --persona-id cm123xxx
+  pgc post create --persona-id cm123xxx --brief "Share a secret"
+
+  pgc feed cold-start --count 5
+  pgc feed run
+
+${colors.bright}Environment:${colors.reset}
+  PICAGRAM_API_KEY    Internal API key
+  PICAGRAM_BASE_URL   API base URL (default: https://picagram.ai)
+`);
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  
+  if (args.length === 0 || args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
+    showHelp();
+    return;
+  }
+  
+  const resource = args[0];
+  const action = args[1];
+  const { positional, options } = parseArgs(args.slice(2));
+  
+  try {
+    switch (resource) {
+      case 'persona':
+        switch (action) {
+          case 'list': await personaCommands.list(options); break;
+          case 'get': await personaCommands.get(positional[0]); break;
+          case 'create': await personaCommands.create({ ...options, prompt: positional[0] }); break;
+          case 'update': await personaCommands.update(positional[0], options); break;
+          case 'delete': await personaCommands.delete(positional[0], options.force); break;
+          case 'search': await personaCommands.search(positional[0]); break;
+          default: error(`Unknown action: ${action}`);
+        }
+        break;
+        
+      case 'post':
+        switch (action) {
+          case 'list': await postCommands.list(options); break;
+          case 'get': await postCommands.get(positional[0]); break;
+          case 'create': await postCommands.create(options); break;
+          case 'update': await postCommands.update(positional[0], options); break;
+          case 'delete': await postCommands.delete(positional[0], options.force); break;
+          default: error(`Unknown action: ${action}`);
+        }
+        break;
+        
+      case 'arc':
+        switch (action) {
+          case 'list': await arcCommands.list(options); break;
+          case 'get': await arcCommands.get(positional[0]); break;
+          case 'create': await arcCommands.create(options); break;
+          case 'update': await arcCommands.update(positional[0], options); break;
+          case 'delete': await arcCommands.delete(positional[0], options.force); break;
+          default: error(`Unknown action: ${action}`);
+        }
+        break;
+        
+      case 'pair':
+        switch (action) {
+          case 'list': await pairCommands.list(); break;
+          case 'create': await pairCommands.create(options); break;
+          case 'delete': await pairCommands.delete(positional[0]); break;
+          default: error(`Unknown action: ${action}`);
+        }
+        break;
+        
+      case 'feed':
+        switch (action) {
+          case 'cold-start': await feedCommands.coldStart(options); break;
+          case 'plan-day': await feedCommands.planDay(); break;
+          case 'run': await feedCommands.run(); break;
+          default: error(`Unknown action: ${action}`);
+        }
+        break;
+        
+      case 'chat':
+        switch (action) {
+          case 'group-run': await chatCommands.groupRun(); break;
+          case 'proactive-run': await chatCommands.proactiveRun(); break;
+          default: error(`Unknown action: ${action}`);
+        }
+        break;
+        
+      default:
+        error(`Unknown resource: ${resource}`);
+        showHelp();
+    }
+  } catch (err) {
+    error(err.message);
+    process.exit(1);
+  }
+}
+
+main();
