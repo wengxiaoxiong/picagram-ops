@@ -29,6 +29,7 @@ pgc persona list --status published    # 只显示已发布的
 pgc persona list --status draft        # 只显示草稿
 pgc persona list --limit 20            # 限制数量
 pgc persona list --type human          # 按类型筛选
+pgc persona list --json                # JSON 格式输出（用于脚本）
 ```
 
 #### 查看人设详情
@@ -80,6 +81,7 @@ pgc post list
 pgc post list --persona-id <id>        # 只看某个人设的帖子
 pgc post list --status published       # 只看已发布的
 pgc post list --limit 10               # 限制数量
+pgc post list --json                   # JSON 格式输出（用于脚本）
 ```
 
 #### 查看帖子详情

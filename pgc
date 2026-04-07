@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Picagram CLI v2.0 - 增强版运营工具
- * 
+ *
  * 新增功能:
  * - 评论管理 (comment list/get/delete)
  * - 点赞管理 (like list)
@@ -9,7 +9,7 @@
  * - 数据导出 (export)
  * - 详细内容编辑 (post/persona 字段级编辑)
  * - 统计仪表盘 (stats)
- * 
+ *
  * 使用方法:
  *   pgc <resource> <action> [options]
  */
@@ -49,7 +49,7 @@ function warn(message) {
 // API 调用函数
 async function apiCall(method, endpoint, data = null, params = null) {
   let url = `${BASE_URL}${endpoint}`;
-  
+
   if (params) {
     const queryParams = new URLSearchParams();
     for (const [key, value] of Object.entries(params)) {
@@ -62,7 +62,7 @@ async function apiCall(method, endpoint, data = null, params = null) {
       url += `?${queryString}`;
     }
   }
-  
+
   const options = {
     method,
     headers: {
@@ -70,23 +70,23 @@ async function apiCall(method, endpoint, data = null, params = null) {
       'Content-Type': 'application/json',
     },
   };
-  
+
   if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
     options.body = JSON.stringify(data);
   }
-  
+
   try {
     const response = await fetch(url, options);
     const result = await response.json().catch(() => null);
-    
+
     if (!response.ok) {
-      return { 
-        ok: false, 
+      return {
+        ok: false,
         status: response.status,
         error: result?.error || result?.message || `HTTP ${response.status}`
       };
     }
-    
+
     return { ok: true, ...result };
   } catch (err) {
     return { ok: false, error: err.message };
@@ -102,26 +102,32 @@ const personaCommands = {
     if (options.limit) params.limit = options.limit;
     if (options.offset) params.offset = options.offset;
     if (options.type) params.type = options.type;
-    
+
     const result = await apiCall('GET', '/api/internal/personas', null, params);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
+    // JSON 输出模式
+    if (options.json) {
+      console.log(JSON.stringify(result.personas, null, 2));
+      return;
+    }
+
     log('\n📋 Persona List:', 'bright');
     log('=' .repeat(100), 'dim');
-    
+
     if (!result.personas || result.personas.length === 0) {
       log('No personas found.', 'yellow');
       return;
     }
-    
+
     // 打印表头
     log(`ID                           | 名称                    | 状态      | 类型   | 帖子 | 粉丝`, 'dim');
     log('-'.repeat(100), 'dim');
-    
+
     for (const p of result.personas) {
       const statusColor = p.status === 'published' ? 'green' : p.status === 'draft' ? 'yellow' : 'dim';
       const name = p.displayName.padEnd(22).substring(0, 22);
@@ -130,10 +136,10 @@ const personaCommands = {
       const type = (p.type || 'human').padEnd(6);
       const posts = String(p.postCount || 0).padStart(3);
       const followers = String(p.followerCount || 0).padStart(4);
-      
+
       log(`${id} | ${name} | ${colors[statusColor]}${status}${colors.reset} | ${type} | ${posts} | ${followers}`);
     }
-    
+
     log(`\n${colors.dim}Total: ${result.total || result.personas.length}${colors.reset}`);
   },
 
@@ -142,14 +148,14 @@ const personaCommands = {
       error('Persona ID is required');
       return;
     }
-    
+
     const result = await apiCall('GET', `/api/internal/personas/${id}`);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     const p = result.persona;
     log(`\n${colors.bright}${colors.cyan}${p.displayName}${colors.reset}`, 'bright');
     log('=' .repeat(80), 'dim');
@@ -164,14 +170,14 @@ const personaCommands = {
     log(`\nCity: ${p.city || 'N/A'}`);
     log(`Job: ${p.jobTitle || 'N/A'}`);
     log(`Tags: ${p.personalityTags?.join(', ') || 'None'}`);
-    
+
     if (p.recentPosts?.length > 0) {
       log(`\nRecent Posts:`, 'cyan');
       for (const post of p.recentPosts.slice(0, 5)) {
         log(`  - ${post.caption?.substring(0, 60)}...`, 'dim');
       }
     }
-    
+
     log(`\nCreated: ${new Date(p.createdAt).toLocaleString()}`);
   },
 
@@ -180,25 +186,25 @@ const personaCommands = {
       error('Prompt is required. Use: pgc persona create "prompt text"');
       return;
     }
-    
+
     log(`Creating persona with prompt: ${data.prompt.substring(0, 60)}...`, 'blue');
-    
+
     const result = await apiCall('POST', '/api/internal/persona-generation/run', {
       prompt: data.prompt,
       status: data.status || 'published',
       count: data.count || 1,
       type: data.type,
     });
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success(`Created ${result.count} persona(s)`);
     log(`IDs: ${result.personaIds.join(', ')}`, 'cyan');
     log(result.note, 'dim');
-    
+
     return result.personaIds;
   },
 
@@ -207,7 +213,7 @@ const personaCommands = {
       error('Persona ID is required');
       return;
     }
-    
+
     const updateData = {};
     if (data.displayName) updateData.displayName = data.displayName;
     if (data.bio) updateData.bio = data.bio;
@@ -217,14 +223,14 @@ const personaCommands = {
     if (data.jobTitle) updateData.jobTitle = data.jobTitle;
     if (data.tags) updateData.personalityTags = data.tags.split(',').map(t => t.trim());
     if (data.voice !== undefined) updateData.voiceEnabled = data.voice === 'true';
-    
+
     const result = await apiCall('PATCH', `/api/internal/personas/${id}`, updateData);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success(`Updated persona ${id}`);
     log('Updated fields:', 'dim');
     for (const [key, value] of Object.entries(updateData)) {
@@ -237,20 +243,20 @@ const personaCommands = {
       error('Persona ID is required');
       return;
     }
-    
+
     if (!force) {
       warn(`This will delete persona ${id} and all associated data.`);
       log(`Use --force to confirm.`, 'dim');
       return;
     }
-    
+
     const result = await apiCall('DELETE', `/api/internal/personas/${id}`);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success(`Deleted persona ${id}`);
   },
 
@@ -259,17 +265,17 @@ const personaCommands = {
       error('Search query is required');
       return;
     }
-    
+
     const result = await apiCall('GET', '/api/internal/personas/search', null, { q: query });
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     log(`\n🔍 Search results for "${query}":`, 'bright');
     log('=' .repeat(80), 'dim');
-    
+
     for (const p of result.personas || []) {
       log(`${colors.cyan}${p.displayName}${colors.reset} - ${p.bio?.substring(0, 60)}...`, 'dim');
     }
@@ -284,21 +290,27 @@ const postCommands = {
     if (options.personaId) params.personaId = options.personaId;
     if (options.status) params.status = options.status;
     if (options.limit) params.limit = options.limit;
-    
+
     const result = await apiCall('GET', '/api/internal/posts', null, params);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
+    // JSON 输出模式
+    if (options.json) {
+      console.log(JSON.stringify(result.posts, null, 2));
+      return;
+    }
+
     log('\n📝 Post List:', 'bright');
     log('=' .repeat(100), 'dim');
-    
+
     // 表头
     log(`ID                           | 作者                    | 状态      | 点赞 | 评论 | 内容`, 'dim');
     log('-'.repeat(100), 'dim');
-    
+
     for (const post of result.posts || []) {
       const statusColor = post.status === 'published' ? 'green' : 'yellow';
       const name = (post.personaName || 'Unknown').padEnd(22).substring(0, 22);
@@ -307,10 +319,10 @@ const postCommands = {
       const likes = String(post.likeCount || 0).padStart(3);
       const comments = String(post.commentCount || 0).padStart(3);
       const content = post.caption?.substring(0, 30).padEnd(30) || '';
-      
+
       log(`${id} | ${name} | ${colors[statusColor]}${status}${colors.reset} | ${likes} | ${comments} | ${content}`, 'dim');
     }
-    
+
     log(`\n${colors.dim}Total: ${result.total || result.posts?.length || 0}${colors.reset}`);
   },
 
@@ -319,14 +331,14 @@ const postCommands = {
       error('Post ID is required');
       return;
     }
-    
+
     const result = await apiCall('GET', `/api/internal/posts/${id}`);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     const post = result.post;
     log(`\n${colors.bright}Post${colors.reset}`, 'bright');
     log('=' .repeat(80), 'dim');
@@ -346,19 +358,19 @@ const postCommands = {
       error('Persona ID is required. Use: --persona-id <id>');
       return;
     }
-    
+
     if (data.brief) {
       // 使用 brief 生成
       const result = await apiCall('POST', '/api/internal/persona-feed/brief-post', {
         personaId: data.personaId,
         brief: data.brief,
       });
-      
+
       if (!result.ok) {
         error(result.error);
         return;
       }
-      
+
       success(`Created post for persona ${data.personaId}`);
       log(`Post ID: ${result.postId}`, 'cyan');
     } else if (data.caption) {
@@ -369,12 +381,12 @@ const postCommands = {
         altText: data.altText,
         status: data.status || 'published',
       });
-      
+
       if (!result.ok) {
         error(result.error);
         return;
       }
-      
+
       success(`Created post`);
       log(`Post ID: ${result.post.id}`, 'cyan');
     } else {
@@ -387,24 +399,24 @@ const postCommands = {
       error('Post ID is required');
       return;
     }
-    
+
     const updateData = {};
     if (data.caption) updateData.caption = data.caption;
     if (data.status) updateData.status = data.status;
     if (data.altText) updateData.altText = data.altText;
-    
+
     if (Object.keys(updateData).length === 0) {
       error('No fields to update. Use --caption, --status, or --altText');
       return;
     }
-    
+
     const result = await apiCall('PATCH', `/api/internal/posts/${id}`, updateData);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success(`Updated post ${id}`);
   },
 
@@ -413,20 +425,20 @@ const postCommands = {
       error('Post ID is required');
       return;
     }
-    
+
     if (!force) {
       warn(`This will delete post ${id}.`);
       log(`Use --force to confirm.`, 'dim');
       return;
     }
-    
+
     const result = await apiCall('DELETE', `/api/internal/posts/${id}`);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success(`Deleted post ${id}`);
   },
 
@@ -435,17 +447,17 @@ const postCommands = {
       error('Post ID is required');
       return;
     }
-    
+
     const result = await apiCall('GET', `/api/internal/posts/${id}/comments`);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     log(`\n💬 Comments for Post ${id}:`, 'bright');
     log('=' .repeat(80), 'dim');
-    
+
     for (const comment of result.comments || []) {
       log(`${colors.cyan}${comment.personaName || 'Anonymous'}${colors.reset}: ${comment.content}`, 'dim');
       log(`  ${new Date(comment.createdAt).toLocaleString()}`, 'dim');
@@ -457,17 +469,17 @@ const postCommands = {
       error('Post ID is required');
       return;
     }
-    
+
     const result = await apiCall('GET', `/api/internal/posts/${id}/likes`);
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     log(`\n❤️ Likes for Post ${id}:`, 'bright');
     log(`Total: ${result.likes?.length || 0}`, 'cyan');
-    
+
     for (const like of result.likes || []) {
       log(`  ${like.personaName || like.personaId}`, 'dim');
     }
@@ -480,81 +492,81 @@ const feedCommands = {
   async list(options = {}) {
     const limit = options.limit ? Number(options.limit) : 20;
     const seed = options.seed || Date.now().toString();
-    
+
     const result = await apiCall('GET', '/api/internal/feed', null, {
       seed,
       limit,
     });
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     log('\n📰 Homepage Feed:', 'bright');
     log('=' .repeat(100), 'dim');
-    
+
     if (!result.items || result.items.length === 0) {
       log('No feed items found.', 'yellow');
       return;
     }
-    
+
     // 表头
     log(`作者                    | 点赞 | 评论 | 内容`, 'dim');
     log('-'.repeat(100), 'dim');
-    
+
     for (const item of result.items) {
       const personaName = (item.persona?.displayName || 'Unknown').padEnd(22).substring(0, 22);
       const likeCount = String(item.post?.likeCount || 0).padStart(3);
       const commentCount = String(item.post?.commentCount || 0).padStart(3);
       const content = item.post?.caption?.substring(0, 50).padEnd(50) || '';
-      
+
       log(`${personaName} | ${likeCount} | ${commentCount} | ${content}`, 'dim');
     }
-    
+
     log(`\n${colors.dim}Total: ${result.items.length} posts${colors.reset}`);
   },
 
   async coldStart(options = {}) {
     log('Triggering cold start...', 'blue');
-    
+
     const result = await apiCall('POST', '/api/internal/persona-feed/cold-start', {
       count: options.count || 5,
       prompt: options.prompt,
     });
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success('Cold start triggered');
     log(result.note || 'Processing in background...', 'dim');
   },
 
   async planDay() {
     log('Planning day for personas...', 'blue');
-    
+
     const result = await apiCall('POST', '/api/internal/persona-feed/plan-day');
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success('Day planning triggered');
   },
 
   async run() {
     log('Running feed jobs...', 'blue');
-    
+
     const result = await apiCall('POST', '/api/internal/persona-feed/run');
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success('Feed jobs triggered');
   },
 };
@@ -564,27 +576,27 @@ const feedCommands = {
 const chatCommands = {
   async groupRun() {
     log('Running group chat...', 'blue');
-    
+
     const result = await apiCall('POST', '/api/internal/group-chat/run');
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success('Group chat triggered');
   },
 
   async proactiveRun() {
     log('Running proactive messages...', 'blue');
-    
+
     const result = await apiCall('POST', '/api/internal/proactive/run');
-    
+
     if (!result.ok) {
       error(result.error);
       return;
     }
-    
+
     success('Proactive messages triggered');
   },
 };
@@ -594,14 +606,14 @@ const chatCommands = {
 function parseArgs(args) {
   const options = {};
   const positional = [];
-  
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    
+
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const nextArg = args[i + 1];
-      
+
       if (nextArg && !nextArg.startsWith('-')) {
         options[key] = nextArg;
         i++;
@@ -615,7 +627,7 @@ function parseArgs(args) {
       positional.push(arg);
     }
   }
-  
+
   return { positional, options };
 }
 
@@ -625,17 +637,17 @@ function showQuickRef() {
   console.log(`
 ${colors.bright}🚀 Picagram CLI (pgc) v2.0 - 快速参考${colors.reset}
 
-${colors.cyan}常用命令：${colors.reset}
+${colors.cyan}常用命令:${colors.reset}
   pgc persona list                      列出所有人设
   pgc persona get <id>                  查看人设详情
   pgc persona create "描述"              创建新人设
   pgc persona update <id> --bio "xxx"   更新人设简介
-  
+
   pgc post list                         列出所有帖子
   pgc post get <id>                     查看帖子详情
   pgc post create --persona-id <id> --brief "xxx"   创建帖子
   pgc post comments <id>                查看帖子评论
-  
+
   pgc feed list                         查看首页 Feed
   pgc feed cold-start --count 5         批量创建人设
 
@@ -685,6 +697,7 @@ ${colors.bright}Options:${colors.reset}
   --status <status>   Filter by status (draft/published/archived)
   --limit <n>         Limit results
   --persona-id <id>   Specify persona ID
+  --json              Output in JSON format (for scripting)
   --force             Confirm destructive actions
 
 ${colors.bright}Examples:${colors.reset}
@@ -754,27 +767,27 @@ function showCommandHints(resource, action) {
 
 async function main() {
   const args = process.argv.slice(2);
-  
+
   if (args.length === 0) {
     showQuickRef();
     return;
   }
-  
+
   if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
     showHelp();
     return;
   }
-  
+
   const resource = args[0];
   const action = args[1];
   const { positional, options } = parseArgs(args.slice(2));
-  
-  // 如果没有 action，显示该 resource 的提示
+
+  // 如果没有 action,显示该 resource 的提示
   if (!action) {
     showCommandHints(resource);
     return;
   }
-  
+
   try {
     switch (resource) {
       case 'persona':
@@ -785,12 +798,12 @@ async function main() {
           case 'update': await personaCommands.update(positional[0], options); break;
           case 'delete': await personaCommands.delete(positional[0], options.force); break;
           case 'search': await personaCommands.search(positional[0]); break;
-          default: 
+          default:
             error(`Unknown action: ${action}`);
             showCommandHints(resource, action);
         }
         break;
-        
+
       case 'post':
         switch (action) {
           case 'list': await postCommands.list(options); break;
@@ -800,34 +813,34 @@ async function main() {
           case 'delete': await postCommands.delete(positional[0], options.force); break;
           case 'comments': await postCommands.comments(positional[0]); break;
           case 'likes': await postCommands.likes(positional[0]); break;
-          default: 
+          default:
             error(`Unknown action: ${action}`);
             showCommandHints(resource, action);
         }
         break;
-        
+
       case 'feed':
         switch (action) {
           case 'list': await feedCommands.list(options); break;
           case 'cold-start': await feedCommands.coldStart(options); break;
           case 'plan-day': await feedCommands.planDay(); break;
           case 'run': await feedCommands.run(); break;
-          default: 
+          default:
             error(`Unknown action: ${action}`);
             showCommandHints(resource, action);
         }
         break;
-        
+
       case 'chat':
         switch (action) {
           case 'group-run': await chatCommands.groupRun(); break;
           case 'proactive-run': await chatCommands.proactiveRun(); break;
-          default: 
+          default:
             error(`Unknown action: ${action}`);
             showCommandHints(resource, action);
         }
         break;
-        
+
       default:
         error(`Unknown resource: ${resource}`);
         showCommandHints();
