@@ -134,7 +134,19 @@ const personaCommands = {
       log(`${id} | ${name} | ${colors[statusColor]}${status}${colors.reset} | ${type} | ${posts} | ${followers}`);
     }
     
-    log(`\n${colors.dim}Total: ${result.total || result.personas.length}${colors.reset}`);
+    const total = result.total || result.personas.length;
+    const limit = parseInt(options.limit) || 50;
+    const offset = parseInt(options.offset) || 0;
+    const start = offset + 1;
+    const end = Math.min(offset + result.personas.length, total);
+    
+    log(`\n${colors.dim}Showing ${start}-${end} of ${total}${colors.reset}`);
+    
+    // 显示翻页提示
+    if (end < total) {
+      const nextOffset = offset + limit;
+      log(`${colors.cyan}Next page: pgc persona list --offset ${nextOffset}${limit !== 50 ? ' --limit ' + limit : ''}${options.status ? ' --status ' + options.status : ''}${options.type ? ' --type ' + options.type : ''}${colors.reset}`);
+    }
   },
 
   async get(id) {
@@ -284,6 +296,7 @@ const postCommands = {
     if (options.personaId) params.personaId = options.personaId;
     if (options.status) params.status = options.status;
     if (options.limit) params.limit = options.limit;
+    if (options.offset) params.offset = options.offset;
     
     const result = await apiCall('GET', '/api/internal/posts', null, params);
     
@@ -311,7 +324,19 @@ const postCommands = {
       log(`${id} | ${name} | ${colors[statusColor]}${status}${colors.reset} | ${likes} | ${comments} | ${content}`, 'dim');
     }
     
-    log(`\n${colors.dim}Total: ${result.total || result.posts?.length || 0}${colors.reset}`);
+    const total = result.total || result.posts?.length || 0;
+    const limit = parseInt(options.limit) || 50;
+    const offset = parseInt(options.offset) || 0;
+    const start = offset + 1;
+    const end = Math.min(offset + (result.posts?.length || 0), total);
+    
+    log(`\n${colors.dim}Showing ${start}-${end} of ${total}${colors.reset}`);
+    
+    // 显示翻页提示
+    if (end < total) {
+      const nextOffset = offset + limit;
+      log(`${colors.cyan}Next page: pgc post list --offset ${nextOffset}${limit !== 50 ? ' --limit ' + limit : ''}${options.personaId ? ' --persona-id ' + options.personaId : ''}${options.status ? ' --status ' + options.status : ''}${colors.reset}`);
+    }
   },
 
   async get(id) {
@@ -653,7 +678,7 @@ ${colors.bright}Usage:${colors.reset}
 ${colors.bright}Resources:${colors.reset}
 
   ${colors.cyan}persona${colors.reset}    Manage personas
-    list [--status] [--limit] [--type]   List with filters
+    list [--status] [--limit] [--offset] [--type]  List with pagination
     get <id>                             Get details
     create "prompt" [--status]           Create new persona
     update <id> [--bio] [--story] ...    Update fields
@@ -661,7 +686,7 @@ ${colors.bright}Resources:${colors.reset}
     search <query>                       Search personas
 
   ${colors.cyan}post${colors.reset}       Manage posts
-    list [--persona-id] [--status]       List posts
+    list [--persona-id] [--status] [--limit] [--offset]  List posts with pagination
     get <id>                             Get post details
     create --persona-id <id>             Create post
            --caption <text> | --brief <text>
@@ -683,16 +708,19 @@ ${colors.bright}Resources:${colors.reset}
 
 ${colors.bright}Options:${colors.reset}
   --status <status>   Filter by status (draft/published/archived)
-  --limit <n>         Limit results
+  --limit <n>         Limit results (default: 50)
+  --offset <n>        Skip N results for pagination
   --persona-id <id>   Specify persona ID
   --force             Confirm destructive actions
 
 ${colors.bright}Examples:${colors.reset}
   pgc persona list
+  pgc persona list --limit 20 --offset 20    # Page 2
   pgc persona get cm123xxx
   pgc persona create "A mysterious detective" --status published
   pgc persona update cm123xxx --bio "New bio text"
   pgc post list --persona-id cm123xxx
+  pgc post list --limit 10 --offset 0        # First page
   pgc post create --persona-id cm123xxx --brief "Share a secret"
   pgc post comments cm456xxx
   pgc feed list
@@ -703,7 +731,7 @@ ${colors.bright}Examples:${colors.reset}
 function showCommandHints(resource, action) {
   const hints = {
     persona: {
-      list: 'pgc persona list [--status published|draft] [--limit 20] [--type human]',
+      list: 'pgc persona list [--status published|draft] [--limit 20] [--offset 0] [--type human]',
       get: 'pgc persona get <id>',
       create: 'pgc persona create "描述文字" [--status published] [--type human]',
       update: 'pgc persona update <id> [--bio "xxx"] [--story "xxx"] [--city "xxx"] [--jobTitle "xxx"] [--tags "a,b,c"] [--status published]',
@@ -711,7 +739,7 @@ function showCommandHints(resource, action) {
       search: 'pgc persona search "关键词"',
     },
     post: {
-      list: 'pgc post list [--persona-id <id>] [--status published] [--limit 20]',
+      list: 'pgc post list [--persona-id <id>] [--status published] [--limit 20] [--offset 0]',
       get: 'pgc post get <id>',
       create: 'pgc post create --persona-id <id> --brief "描述" | --caption "内容" [--status published] [--altText "xxx"]',
       update: 'pgc post update <id> [--caption "xxx"] [--altText "xxx"] [--status published|draft|archived]',
