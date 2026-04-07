@@ -354,7 +354,8 @@ const postCommands = {
   },
 
   async create(data) {
-    if (!data.personaId) {
+    const personaId = data.personaId || data['persona-id'];
+    if (!personaId) {
       error('Persona ID is required. Use: --persona-id <id>');
       return;
     }
@@ -362,7 +363,7 @@ const postCommands = {
     if (data.brief) {
       // 使用 brief 生成
       const result = await apiCall('POST', '/api/internal/persona-feed/brief-post', {
-        personaId: data.personaId,
+        personaId: personaId,
         brief: data.brief,
       });
 
@@ -371,12 +372,12 @@ const postCommands = {
         return;
       }
 
-      success(`Created post for persona ${data.personaId}`);
+      success(`Created post for persona ${personaId}`);
       log(`Post ID: ${result.postId}`, 'cyan');
     } else if (data.caption) {
       // 直接创建
       const result = await apiCall('POST', '/api/internal/posts', {
-        personaId: data.personaId,
+        personaId: personaId,
         caption: data.caption,
         altText: data.altText,
         status: data.status || 'published',
