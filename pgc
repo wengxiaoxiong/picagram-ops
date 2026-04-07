@@ -536,6 +536,42 @@ const pairCommands = {
 // ==================== Feed Operations ====================
 
 const feedCommands = {
+  async list(options = {}) {
+    const limit = options.limit ? Number(options.limit) : 20;
+    const seed = options.seed || Date.now().toString();
+    
+    const result = await apiCall('GET', '/api/internal/feed', null, {
+      seed,
+      limit,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log('\n📰 Homepage Feed:', 'bright');
+    log('=' .repeat(80), 'dim');
+    
+    if (!result.items || result.items.length === 0) {
+      log('No feed items found.', 'yellow');
+      return;
+    }
+    
+    for (const item of result.items) {
+      const personaName = item.persona?.displayName || 'Unknown';
+      const postCaption = item.post?.caption || 'No caption';
+      const likeCount = item.post?.likeCount || 0;
+      const commentCount = item.post?.commentCount || 0;
+      
+      log(`\n${colors.cyan}${personaName}${colors.reset}`, 'bright');
+      log(`  ${postCaption.substring(0, 100)}${postCaption.length > 100 ? '...' : ''}`, 'dim');
+      log(`  ❤️ ${likeCount}  💬 ${commentCount}`, 'dim');
+    }
+    
+    log(`\n${colors.dim}Total: ${result.items.length} posts${colors.reset}`);
+  },
+
   async coldStart(options = {}) {
     log('Triggering cold start...', 'blue');
     
@@ -679,6 +715,7 @@ ${colors.bright}Resources:${colors.reset}
     delete <id>       Delete pair
 
   ${colors.cyan}feed${colors.reset}       Feed operations
+    list              List homepage feed posts
     cold-start        Trigger cold start
     plan-day          Plan day for personas
     run               Run feed jobs
@@ -772,6 +809,7 @@ async function main() {
         
       case 'feed':
         switch (action) {
+          case 'list': await feedCommands.list(options); break;
           case 'cold-start': await feedCommands.coldStart(options); break;
           case 'plan-day': await feedCommands.planDay(); break;
           case 'run': await feedCommands.run(); break;
