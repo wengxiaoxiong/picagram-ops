@@ -621,6 +621,28 @@ function parseArgs(args) {
 
 // ==================== Main CLI ====================
 
+function showQuickRef() {
+  console.log(`
+${colors.bright}🚀 Picagram CLI (pgc) v2.0 - 快速参考${colors.reset}
+
+${colors.cyan}常用命令：${colors.reset}
+  pgc persona list                      列出所有人设
+  pgc persona get <id>                  查看人设详情
+  pgc persona create "描述"              创建新人设
+  pgc persona update <id> --bio "xxx"   更新人设简介
+  
+  pgc post list                         列出所有帖子
+  pgc post get <id>                     查看帖子详情
+  pgc post create --persona-id <id> --brief "xxx"   创建帖子
+  pgc post comments <id>                查看帖子评论
+  
+  pgc feed list                         查看首页 Feed
+  pgc feed cold-start --count 5         批量创建人设
+
+${colors.dim}提示: 使用 pgc --help 查看完整文档${colors.reset}
+`);
+}
+
 function showHelp() {
   console.log(`
 ${colors.bright}Picagram CLI (pgc) v2.0${colors.reset} - 增强版运营工具
@@ -677,10 +699,68 @@ ${colors.bright}Examples:${colors.reset}
 `);
 }
 
+// 命令提示和建议
+function showCommandHints(resource, action) {
+  const hints = {
+    persona: {
+      list: 'pgc persona list [--status published|draft] [--limit 20] [--type human]',
+      get: 'pgc persona get <id>',
+      create: 'pgc persona create "描述文字" [--status published] [--type human]',
+      update: 'pgc persona update <id> [--bio "xxx"] [--story "xxx"] [--city "xxx"] [--jobTitle "xxx"] [--tags "a,b,c"] [--status published]',
+      delete: 'pgc persona delete <id> --force',
+      search: 'pgc persona search "关键词"',
+    },
+    post: {
+      list: 'pgc post list [--persona-id <id>] [--status published] [--limit 20]',
+      get: 'pgc post get <id>',
+      create: 'pgc post create --persona-id <id> --brief "描述" | --caption "内容" [--status published] [--altText "xxx"]',
+      update: 'pgc post update <id> [--caption "xxx"] [--altText "xxx"] [--status published|draft|archived]',
+      delete: 'pgc post delete <id> --force',
+      comments: 'pgc post comments <post-id>',
+      likes: 'pgc post likes <post-id>',
+    },
+    feed: {
+      list: 'pgc feed list [--limit 20]',
+      'cold-start': 'pgc feed cold-start [--count 5] [--prompt "xxx"]',
+      'plan-day': 'pgc feed plan-day',
+      run: 'pgc feed run',
+    },
+    chat: {
+      'group-run': 'pgc chat group-run',
+      'proactive-run': 'pgc chat proactive-run',
+    },
+  };
+
+  if (resource && hints[resource]) {
+    if (action && hints[resource][action]) {
+      log(`\n💡 Usage: ${hints[resource][action]}`, 'cyan');
+    } else if (action) {
+      log(`\n❓ Unknown action "${action}" for resource "${resource}"`, 'red');
+      log(`Available actions for ${resource}:`, 'yellow');
+      Object.keys(hints[resource]).forEach(a => {
+        log(`  - ${a}`, 'dim');
+      });
+    } else {
+      log(`\nAvailable actions for ${resource}:`, 'cyan');
+      Object.entries(hints[resource]).forEach(([a, hint]) => {
+        log(`  ${a.padEnd(12)} ${hint.substring(0, 60)}...`, 'dim');
+      });
+    }
+  } else if (resource) {
+    log(`\n❓ Unknown resource "${resource}"`, 'red');
+    log('Available resources: persona, post, feed, chat', 'yellow');
+  }
+}
+
 async function main() {
   const args = process.argv.slice(2);
   
-  if (args.length === 0 || args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
+  if (args.length === 0) {
+    showQuickRef();
+    return;
+  }
+  
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
     showHelp();
     return;
   }
@@ -688,6 +768,12 @@ async function main() {
   const resource = args[0];
   const action = args[1];
   const { positional, options } = parseArgs(args.slice(2));
+  
+  // 如果没有 action，显示该 resource 的提示
+  if (!action) {
+    showCommandHints(resource);
+    return;
+  }
   
   try {
     switch (resource) {
@@ -699,7 +785,9 @@ async function main() {
           case 'update': await personaCommands.update(positional[0], options); break;
           case 'delete': await personaCommands.delete(positional[0], options.force); break;
           case 'search': await personaCommands.search(positional[0]); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
@@ -712,7 +800,9 @@ async function main() {
           case 'delete': await postCommands.delete(positional[0], options.force); break;
           case 'comments': await postCommands.comments(positional[0]); break;
           case 'likes': await postCommands.likes(positional[0]); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
@@ -722,7 +812,9 @@ async function main() {
           case 'cold-start': await feedCommands.coldStart(options); break;
           case 'plan-day': await feedCommands.planDay(); break;
           case 'run': await feedCommands.run(); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
@@ -730,12 +822,15 @@ async function main() {
         switch (action) {
           case 'group-run': await chatCommands.groupRun(); break;
           case 'proactive-run': await chatCommands.proactiveRun(); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
       default:
         error(`Unknown resource: ${resource}`);
+        showCommandHints();
         showHelp();
     }
   } catch (err) {
