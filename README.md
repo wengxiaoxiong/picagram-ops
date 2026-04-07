@@ -7,23 +7,36 @@ Picagram 运营 CLI 工具和自动化脚本集合。
 
 ## 安装
 
-### 通过 pnpm 安装（推荐）
+### 方式1：使用安装脚本（推荐）
+
+```bash
+git clone https://github.com/wengxiaoxiong/picagram-ops.git
+cd picagram-ops
+./install.sh
+```
+
+安装后会提示你将 `~/.local/bin` 添加到 PATH。
+
+### 方式2：通过 pnpm 安装
 
 ```bash
 pnpm install -g picagram-ops
 ```
 
-### 通过 npm 安装
+### 方式3：通过 npm 安装
 
 ```bash
 npm install -g picagram-ops
 ```
 
-### 从源码安装
+### 方式4：从源码安装
 
 ```bash
 git clone https://github.com/wengxiaoxiong/picagram-ops.git
 cd picagram-ops
+# 直接创建符号链接
+ln -s $(pwd)/bin/pgc.js ~/.local/bin/pgc
+# 或者使用 pnpm link
 pnpm install
 pnpm link --global
 ```

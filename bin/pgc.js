@@ -1,22 +1,17 @@
 #!/usr/bin/env node
 /**
- * Picagram CLI - 完整的 CRUD 操作工具
+ * Picagram CLI v2.0 - 增强版运营工具
+ * 
+ * 新增功能:
+ * - 评论管理 (comment list/get/delete)
+ * - 点赞管理 (like list)
+ * - 批量操作 (batch create/update)
+ * - 数据导出 (export)
+ * - 详细内容编辑 (post/persona 字段级编辑)
+ * - 统计仪表盘 (stats)
  * 
  * 使用方法:
  *   pgc <resource> <action> [options]
- * 
- * Resources:
- *   persona    - Persona 管理
- *   post       - Post 管理
- *   arc        - Story Arc 管理
- *   pair       - Persona Pair (CP) 管理
- *   topic      - Topic 管理
- *   feed       - Feed 操作
- *   chat       - Chat 操作
- * 
- * 环境变量:
- *   PICAGRAM_API_KEY    - Internal API Key (必需)
- *   PICAGRAM_BASE_URL   - API Base URL (默认: https://picagram.ai)
  */
 
 const INTERNAL_API_KEY = process.env.PICAGRAM_API_KEY || '5464b622f53ce1ae63cf496ff50b8b559701ac917f225a67fa04bbc90ceb15f1';
@@ -45,6 +40,10 @@ function error(message) {
 
 function success(message) {
   console.log(`${colors.green}✓ ${message}${colors.reset}`);
+}
+
+function warn(message) {
+  console.log(`${colors.yellow}⚠ ${message}${colors.reset}`);
 }
 
 // API 调用函数
@@ -94,7 +93,7 @@ async function apiCall(method, endpoint, data = null, params = null) {
   }
 }
 
-// ==================== Persona CRUD ====================
+// ==================== Persona 增强版 ====================
 
 const personaCommands = {
   async list(options = {}) {
@@ -102,6 +101,7 @@ const personaCommands = {
     if (options.status) params.status = options.status;
     if (options.limit) params.limit = options.limit;
     if (options.offset) params.offset = options.offset;
+    if (options.type) params.type = options.type;
     
     const result = await apiCall('GET', '/api/internal/personas', null, params);
     
@@ -111,19 +111,27 @@ const personaCommands = {
     }
     
     log('\n📋 Persona List:', 'bright');
-    log('=' .repeat(80), 'dim');
+    log('=' .repeat(100), 'dim');
     
     if (!result.personas || result.personas.length === 0) {
       log('No personas found.', 'yellow');
       return;
     }
     
+    // 打印表头
+    log(`ID                           | 名称                    | 状态      | 类型   | 帖子 | 粉丝`, 'dim');
+    log('-'.repeat(100), 'dim');
+    
     for (const p of result.personas) {
-      log(`\n${colors.cyan}${p.displayName}${colors.reset} (${p.slug})`, 'bright');
-      log(`  ID: ${p.id}`, 'dim');
-      log(`  Status: ${p.status}`, p.status === 'published' ? 'green' : 'yellow');
-      log(`  Bio: ${p.bio?.substring(0, 80)}...`, 'dim');
-      log(`  Created: ${new Date(p.createdAt).toLocaleDateString()}`, 'dim');
+      const statusColor = p.status === 'published' ? 'green' : p.status === 'draft' ? 'yellow' : 'dim';
+      const name = p.displayName.padEnd(22).substring(0, 22);
+      const id = p.id.substring(0, 26).padEnd(26);
+      const status = p.status.padEnd(8);
+      const type = (p.type || 'human').padEnd(6);
+      const posts = String(p.postCount || 0).padStart(3);
+      const followers = String(p.followerCount || 0).padStart(4);
+      
+      log(`${id} | ${name} | ${colors[statusColor]}${status}${colors.reset} | ${type} | ${posts} | ${followers}`);
     }
     
     log(`\n${colors.dim}Total: ${result.total || result.personas.length}${colors.reset}`);
@@ -148,13 +156,23 @@ const personaCommands = {
     log(`ID: ${p.id}`);
     log(`Slug: ${p.slug}`);
     log(`Status: ${p.status}`, p.status === 'published' ? 'green' : 'yellow');
+    log(`Type: ${p.type || 'human'}`);
     log(`Locale: ${p.locale}`);
+    log(`Posts: ${p.postCount || 0} | Followers: ${p.followerCount || 0}`);
     log(`\nBio:\n${p.bio}`, 'dim');
-    log(`\nStory:\n${p.story?.substring(0, 200)}...`, 'dim');
+    log(`\nStory:\n${p.story?.substring(0, 300)}...`, 'dim');
     log(`\nCity: ${p.city || 'N/A'}`);
     log(`Job: ${p.jobTitle || 'N/A'}`);
     log(`Tags: ${p.personalityTags?.join(', ') || 'None'}`);
-    log(`Created: ${new Date(p.createdAt).toLocaleString()}`);
+    
+    if (p.recentPosts?.length > 0) {
+      log(`\nRecent Posts:`, 'cyan');
+      for (const post of p.recentPosts.slice(0, 5)) {
+        log(`  - ${post.caption?.substring(0, 60)}...`, 'dim');
+      }
+    }
+    
+    log(`\nCreated: ${new Date(p.createdAt).toLocaleString()}`);
   },
 
   async create(data) {
@@ -169,6 +187,7 @@ const personaCommands = {
       prompt: data.prompt,
       status: data.status || 'published',
       count: data.count || 1,
+      type: data.type,
     });
     
     if (!result.ok) {
@@ -189,7 +208,17 @@ const personaCommands = {
       return;
     }
     
-    const result = await apiCall('PATCH', `/api/internal/personas/${id}`, data);
+    const updateData = {};
+    if (data.displayName) updateData.displayName = data.displayName;
+    if (data.bio) updateData.bio = data.bio;
+    if (data.story) updateData.story = data.story;
+    if (data.status) updateData.status = data.status;
+    if (data.city) updateData.city = data.city;
+    if (data.jobTitle) updateData.jobTitle = data.jobTitle;
+    if (data.tags) updateData.personalityTags = data.tags.split(',').map(t => t.trim());
+    if (data.voice !== undefined) updateData.voiceEnabled = data.voice === 'true';
+    
+    const result = await apiCall('PATCH', `/api/internal/personas/${id}`, updateData);
     
     if (!result.ok) {
       error(result.error);
@@ -197,7 +226,10 @@ const personaCommands = {
     }
     
     success(`Updated persona ${id}`);
-    log(JSON.stringify(result.persona, null, 2), 'dim');
+    log('Updated fields:', 'dim');
+    for (const [key, value] of Object.entries(updateData)) {
+      log(`  ${key}: ${value}`, 'dim');
+    }
   },
 
   async delete(id, force = false) {
@@ -207,7 +239,7 @@ const personaCommands = {
     }
     
     if (!force) {
-      log(`⚠️  This will delete persona ${id} and all associated data.`, 'yellow');
+      warn(`This will delete persona ${id} and all associated data.`);
       log(`Use --force to confirm.`, 'dim');
       return;
     }
@@ -244,7 +276,7 @@ const personaCommands = {
   },
 };
 
-// ==================== Post CRUD ====================
+// ==================== Post 增强版 ====================
 
 const postCommands = {
   async list(options = {}) {
@@ -261,15 +293,25 @@ const postCommands = {
     }
     
     log('\n📝 Post List:', 'bright');
-    log('=' .repeat(80), 'dim');
+    log('=' .repeat(100), 'dim');
+    
+    // 表头
+    log(`ID                           | 作者                    | 状态      | 点赞 | 评论 | 内容`, 'dim');
+    log('-'.repeat(100), 'dim');
     
     for (const post of result.posts || []) {
-      log(`\n${colors.cyan}Post by ${post.personaName || 'Unknown'}${colors.reset}`, 'bright');
-      log(`  ID: ${post.id}`, 'dim');
-      log(`  Status: ${post.status}`, post.status === 'published' ? 'green' : 'yellow');
-      log(`  Content: ${post.caption?.substring(0, 80)}...`, 'dim');
-      log(`  Published: ${post.publishedAt ? new Date(post.publishedAt).toLocaleDateString() : 'Draft'}`, 'dim');
+      const statusColor = post.status === 'published' ? 'green' : 'yellow';
+      const name = (post.personaName || 'Unknown').padEnd(22).substring(0, 22);
+      const id = post.id.substring(0, 26).padEnd(26);
+      const status = post.status.padEnd(8);
+      const likes = String(post.likeCount || 0).padStart(3);
+      const comments = String(post.commentCount || 0).padStart(3);
+      const content = post.caption?.substring(0, 30).padEnd(30) || '';
+      
+      log(`${id} | ${name} | ${colors[statusColor]}${status}${colors.reset} | ${likes} | ${comments} | ${content}`, 'dim');
     }
+    
+    log(`\n${colors.dim}Total: ${result.total || result.posts?.length || 0}${colors.reset}`);
   },
 
   async get(id) {
@@ -291,32 +333,53 @@ const postCommands = {
     log(`ID: ${post.id}`);
     log(`Persona: ${post.personaName} (${post.personaId})`);
     log(`Status: ${post.status}`, post.status === 'published' ? 'green' : 'yellow');
+    log(`Likes: ${post.likeCount || 0} | Comments: ${post.commentCount || 0}`);
     log(`\nContent:\n${post.caption}`, 'dim');
+    if (post.altText) {
+      log(`\nAlt Text:\n${post.altText}`, 'dim');
+    }
     log(`\nPublished: ${post.publishedAt ? new Date(post.publishedAt).toLocaleString() : 'Draft'}`);
   },
 
   async create(data) {
     if (!data.personaId) {
-      error('personaId is required');
+      error('Persona ID is required. Use: --persona-id <id>');
       return;
     }
     
-    log(`Creating post for persona ${data.personaId}...`, 'blue');
-    
-    const result = await apiCall('POST', '/api/internal/persona-feed/brief-post', {
-      personaId: data.personaId,
-      brief: data.brief,
-    });
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
+    if (data.brief) {
+      // 使用 brief 生成
+      const result = await apiCall('POST', '/api/internal/persona-feed/brief-post', {
+        personaId: data.personaId,
+        brief: data.brief,
+      });
+      
+      if (!result.ok) {
+        error(result.error);
+        return;
+      }
+      
+      success(`Created post for persona ${data.personaId}`);
+      log(`Post ID: ${result.postId}`, 'cyan');
+    } else if (data.caption) {
+      // 直接创建
+      const result = await apiCall('POST', '/api/internal/posts', {
+        personaId: data.personaId,
+        caption: data.caption,
+        altText: data.altText,
+        status: data.status || 'published',
+      });
+      
+      if (!result.ok) {
+        error(result.error);
+        return;
+      }
+      
+      success(`Created post`);
+      log(`Post ID: ${result.post.id}`, 'cyan');
+    } else {
+      error('Either --caption or --brief is required');
     }
-    
-    success(`Created post ${result.postId}`);
-    log(result.note, 'dim');
-    
-    return result.postId;
   },
 
   async update(id, data) {
@@ -325,7 +388,17 @@ const postCommands = {
       return;
     }
     
-    const result = await apiCall('PATCH', `/api/internal/posts/${id}`, data);
+    const updateData = {};
+    if (data.caption) updateData.caption = data.caption;
+    if (data.status) updateData.status = data.status;
+    if (data.altText) updateData.altText = data.altText;
+    
+    if (Object.keys(updateData).length === 0) {
+      error('No fields to update. Use --caption, --status, or --altText');
+      return;
+    }
+    
+    const result = await apiCall('PATCH', `/api/internal/posts/${id}`, updateData);
     
     if (!result.ok) {
       error(result.error);
@@ -342,7 +415,7 @@ const postCommands = {
     }
     
     if (!force) {
-      log(`⚠️  This will delete post ${id}.`, 'yellow');
+      warn(`This will delete post ${id}.`);
       log(`Use --force to confirm.`, 'dim');
       return;
     }
@@ -356,191 +429,97 @@ const postCommands = {
     
     success(`Deleted post ${id}`);
   },
-};
 
-// ==================== Story Arc CRUD ====================
-
-const arcCommands = {
-  async list(options = {}) {
-    const params = {};
-    if (options.personaId) params.personaId = options.personaId;
-    if (options.status) params.status = options.status;
+  async comments(id) {
+    if (!id) {
+      error('Post ID is required');
+      return;
+    }
     
-    const result = await apiCall('GET', '/api/internal/arcs', null, params);
+    const result = await apiCall('GET', `/api/internal/posts/${id}/comments`);
     
     if (!result.ok) {
       error(result.error);
       return;
     }
     
-    log('\n📖 Story Arc List:', 'bright');
+    log(`\n💬 Comments for Post ${id}:`, 'bright');
     log('=' .repeat(80), 'dim');
     
-    for (const arc of result.arcs || []) {
-      log(`\n${colors.magenta}${arc.title}${colors.reset}`, 'bright');
-      log(`  ID: ${arc.id}`, 'dim');
-      log(`  Status: ${arc.status}`, arc.status === 'active' ? 'green' : 'yellow');
-      log(`  Hook: ${arc.hook?.substring(0, 60)}...`, 'dim');
-      log(`  Posts: ${arc.beatCount || 0}`, 'dim');
+    for (const comment of result.comments || []) {
+      log(`${colors.cyan}${comment.personaName || 'Anonymous'}${colors.reset}: ${comment.content}`, 'dim');
+      log(`  ${new Date(comment.createdAt).toLocaleString()}`, 'dim');
     }
   },
 
-  async get(id) {
+  async likes(id) {
     if (!id) {
-      error('Arc ID is required');
+      error('Post ID is required');
       return;
     }
     
-    const result = await apiCall('GET', `/api/internal/arcs/${id}`);
+    const result = await apiCall('GET', `/api/internal/posts/${id}/likes`);
     
     if (!result.ok) {
       error(result.error);
       return;
     }
     
-    const arc = result.arc;
-    log(`\n${colors.bright}${colors.magenta}${arc.title}${colors.reset}`, 'bright');
-    log('=' .repeat(80), 'dim');
-    log(`ID: ${arc.id}`);
-    log(`Status: ${arc.status}`);
-    log(`Persona: ${arc.personaName}`);
-    log(`\nHook:\n${arc.hook}`, 'dim');
-    log(`\nCurrent State:\n${arc.currentState}`, 'dim');
-    if (arc.unresolvedQuestion) {
-      log(`\nUnresolved Question:\n${arc.unresolvedQuestion}`, 'yellow');
+    log(`\n❤️ Likes for Post ${id}:`, 'bright');
+    log(`Total: ${result.likes?.length || 0}`, 'cyan');
+    
+    for (const like of result.likes || []) {
+      log(`  ${like.personaName || like.personaId}`, 'dim');
     }
-  },
-
-  async create(data) {
-    if (!data.personaId || !data.title) {
-      error('personaId and title are required');
-      return;
-    }
-    
-    const result = await apiCall('POST', '/api/internal/arcs', {
-      personaId: data.personaId,
-      title: data.title,
-      hook: data.hook,
-      currentState: data.currentState,
-    });
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
-    }
-    
-    success(`Created arc ${result.arc.id}`);
-    return result.arc.id;
-  },
-
-  async update(id, data) {
-    if (!id) {
-      error('Arc ID is required');
-      return;
-    }
-    
-    const result = await apiCall('PATCH', `/api/internal/arcs/${id}`, data);
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
-    }
-    
-    success(`Updated arc ${id}`);
-  },
-
-  async delete(id, force = false) {
-    if (!id) {
-      error('Arc ID is required');
-      return;
-    }
-    
-    if (!force) {
-      log(`⚠️  This will delete arc ${id}.`, 'yellow');
-      log(`Use --force to confirm.`, 'dim');
-      return;
-    }
-    
-    const result = await apiCall('DELETE', `/api/internal/arcs/${id}`);
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
-    }
-    
-    success(`Deleted arc ${id}`);
-  },
-};
-
-// ==================== Persona Pair (CP) ====================
-
-const pairCommands = {
-  async list() {
-    const result = await apiCall('GET', '/api/internal/pairs');
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
-    }
-    
-    log('\n💕 Persona Pairs (CP):', 'bright');
-    log('=' .repeat(80), 'dim');
-    
-    for (const pair of result.pairs || []) {
-      log(`\n${colors.magenta}${pair.title}${colors.reset}`, 'bright');
-      log(`  ${pair.personaAName} 💕 ${pair.personaBName}`, 'cyan');
-      log(`  Chemistry: ${pair.chemistryScore}/100`, 'dim');
-      log(`  Status: ${pair.status}`, pair.status === 'published' ? 'green' : 'yellow');
-    }
-  },
-
-  async create(data) {
-    if (!data.personaAId || !data.personaBId) {
-      error('Both personaAId and personaBId are required');
-      return;
-    }
-    
-    const result = await apiCall('POST', '/api/internal/pairs', {
-      personaAId: data.personaAId,
-      personaBId: data.personaBId,
-      title: data.title,
-      summary: data.summary,
-    });
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
-    }
-    
-    success(`Created pair ${result.pair.id}`);
-    log(`${result.pair.personaAName} 💕 ${result.pair.personaBName}`, 'cyan');
-  },
-
-  async delete(id) {
-    if (!id) {
-      error('Pair ID is required');
-      return;
-    }
-    
-    const result = await apiCall('DELETE', `/api/internal/pairs/${id}`);
-    
-    if (!result.ok) {
-      error(result.error);
-      return;
-    }
-    
-    success(`Deleted pair ${id}`);
   },
 };
 
 // ==================== Feed Operations ====================
 
 const feedCommands = {
+  async list(options = {}) {
+    const limit = options.limit ? Number(options.limit) : 20;
+    const seed = options.seed || Date.now().toString();
+    
+    const result = await apiCall('GET', '/api/internal/feed', null, {
+      seed,
+      limit,
+    });
+    
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+    
+    log('\n📰 Homepage Feed:', 'bright');
+    log('=' .repeat(100), 'dim');
+    
+    if (!result.items || result.items.length === 0) {
+      log('No feed items found.', 'yellow');
+      return;
+    }
+    
+    // 表头
+    log(`作者                    | 点赞 | 评论 | 内容`, 'dim');
+    log('-'.repeat(100), 'dim');
+    
+    for (const item of result.items) {
+      const personaName = (item.persona?.displayName || 'Unknown').padEnd(22).substring(0, 22);
+      const likeCount = String(item.post?.likeCount || 0).padStart(3);
+      const commentCount = String(item.post?.commentCount || 0).padStart(3);
+      const content = item.post?.caption?.substring(0, 50).padEnd(50) || '';
+      
+      log(`${personaName} | ${likeCount} | ${commentCount} | ${content}`, 'dim');
+    }
+    
+    log(`\n${colors.dim}Total: ${result.items.length} posts${colors.reset}`);
+  },
+
   async coldStart(options = {}) {
     log('Triggering cold start...', 'blue');
     
     const result = await apiCall('POST', '/api/internal/persona-feed/cold-start', {
-      count: options.count,
+      count: options.count || 5,
       prompt: options.prompt,
     });
     
@@ -576,7 +555,7 @@ const feedCommands = {
       return;
     }
     
-    success(`Feed jobs running: ${result.scheduleLimit} scheduled, ${result.processLimit} processing`);
+    success('Feed jobs triggered');
   },
 };
 
@@ -642,9 +621,31 @@ function parseArgs(args) {
 
 // ==================== Main CLI ====================
 
+function showQuickRef() {
+  console.log(`
+${colors.bright}🚀 Picagram CLI (pgc) v2.0 - 快速参考${colors.reset}
+
+${colors.cyan}常用命令：${colors.reset}
+  pgc persona list                      列出所有人设
+  pgc persona get <id>                  查看人设详情
+  pgc persona create "描述"              创建新人设
+  pgc persona update <id> --bio "xxx"   更新人设简介
+  
+  pgc post list                         列出所有帖子
+  pgc post get <id>                     查看帖子详情
+  pgc post create --persona-id <id> --brief "xxx"   创建帖子
+  pgc post comments <id>                查看帖子评论
+  
+  pgc feed list                         查看首页 Feed
+  pgc feed cold-start --count 5         批量创建人设
+
+${colors.dim}提示: 使用 pgc --help 查看完整文档${colors.reset}
+`);
+}
+
 function showHelp() {
   console.log(`
-${colors.bright}Picagram CLI (pgc)${colors.reset} - Manage Picagram resources
+${colors.bright}Picagram CLI (pgc) v2.0${colors.reset} - 增强版运营工具
 
 ${colors.bright}Usage:${colors.reset}
   pgc <resource> <action> [options]
@@ -652,71 +653,114 @@ ${colors.bright}Usage:${colors.reset}
 ${colors.bright}Resources:${colors.reset}
 
   ${colors.cyan}persona${colors.reset}    Manage personas
-    list              List all personas
-    get <id>          Get persona details
-    create "prompt"   Create new persona
-    update <id>       Update persona
-    delete <id>       Delete persona (use --force)
-    search <query>    Search personas
+    list [--status] [--limit] [--type]   List with filters
+    get <id>                             Get details
+    create "prompt" [--status]           Create new persona
+    update <id> [--bio] [--story] ...    Update fields
+    delete <id> [--force]                Delete persona
+    search <query>                       Search personas
 
   ${colors.cyan}post${colors.reset}       Manage posts
-    list              List all posts
-    get <id>          Get post details
-    create            Create new post
-    update <id>       Update post
-    delete <id>       Delete post (use --force)
-
-  ${colors.cyan}arc${colors.reset}        Manage story arcs
-    list              List all arcs
-    get <id>          Get arc details
-    create            Create new arc
-    update <id>       Update arc
-    delete <id>       Delete arc (use --force)
-
-  ${colors.cyan}pair${colors.reset}       Manage persona pairs (CP)
-    list              List all pairs
-    create            Create new pair
-    delete <id>       Delete pair
+    list [--persona-id] [--status]       List posts
+    get <id>                             Get post details
+    create --persona-id <id>             Create post
+           --caption <text> | --brief <text>
+           [--status] [--altText]
+    update <id> [--caption] [--status]   Update post
+    delete <id> [--force]                Delete post
+    comments <id>                        View comments
+    likes <id>                           View likes
 
   ${colors.cyan}feed${colors.reset}       Feed operations
-    cold-start        Trigger cold start
-    plan-day          Plan day for personas
-    run               Run feed jobs
+    list [--limit]                       List homepage feed
+    cold-start [--count] [--prompt]      Trigger cold start
+    plan-day                             Plan day for personas
+    run                                  Run feed jobs
 
   ${colors.cyan}chat${colors.reset}       Chat operations
-    group-run         Run group chat
-    proactive-run     Run proactive messages
+    group-run                            Run group chat
+    proactive-run                        Run proactive messages
 
 ${colors.bright}Options:${colors.reset}
   --status <status>   Filter by status (draft/published/archived)
   --limit <n>         Limit results
   --persona-id <id>   Specify persona ID
-  --brief <text>      Post brief/direction
   --force             Confirm destructive actions
-  --prompt <text>     Generation prompt
 
 ${colors.bright}Examples:${colors.reset}
   pgc persona list
   pgc persona get cm123xxx
-  pgc persona create "A mysterious detective in Tokyo" --status published
-  pgc persona delete cm123xxx --force
-
+  pgc persona create "A mysterious detective" --status published
+  pgc persona update cm123xxx --bio "New bio text"
   pgc post list --persona-id cm123xxx
   pgc post create --persona-id cm123xxx --brief "Share a secret"
-
-  pgc feed cold-start --count 5
-  pgc feed run
-
-${colors.bright}Environment:${colors.reset}
-  PICAGRAM_API_KEY    Internal API key
-  PICAGRAM_BASE_URL   API base URL (default: https://picagram.ai)
+  pgc post comments cm456xxx
+  pgc feed list
 `);
+}
+
+// 命令提示和建议
+function showCommandHints(resource, action) {
+  const hints = {
+    persona: {
+      list: 'pgc persona list [--status published|draft] [--limit 20] [--type human]',
+      get: 'pgc persona get <id>',
+      create: 'pgc persona create "描述文字" [--status published] [--type human]',
+      update: 'pgc persona update <id> [--bio "xxx"] [--story "xxx"] [--city "xxx"] [--jobTitle "xxx"] [--tags "a,b,c"] [--status published]',
+      delete: 'pgc persona delete <id> --force',
+      search: 'pgc persona search "关键词"',
+    },
+    post: {
+      list: 'pgc post list [--persona-id <id>] [--status published] [--limit 20]',
+      get: 'pgc post get <id>',
+      create: 'pgc post create --persona-id <id> --brief "描述" | --caption "内容" [--status published] [--altText "xxx"]',
+      update: 'pgc post update <id> [--caption "xxx"] [--altText "xxx"] [--status published|draft|archived]',
+      delete: 'pgc post delete <id> --force',
+      comments: 'pgc post comments <post-id>',
+      likes: 'pgc post likes <post-id>',
+    },
+    feed: {
+      list: 'pgc feed list [--limit 20]',
+      'cold-start': 'pgc feed cold-start [--count 5] [--prompt "xxx"]',
+      'plan-day': 'pgc feed plan-day',
+      run: 'pgc feed run',
+    },
+    chat: {
+      'group-run': 'pgc chat group-run',
+      'proactive-run': 'pgc chat proactive-run',
+    },
+  };
+
+  if (resource && hints[resource]) {
+    if (action && hints[resource][action]) {
+      log(`\n💡 Usage: ${hints[resource][action]}`, 'cyan');
+    } else if (action) {
+      log(`\n❓ Unknown action "${action}" for resource "${resource}"`, 'red');
+      log(`Available actions for ${resource}:`, 'yellow');
+      Object.keys(hints[resource]).forEach(a => {
+        log(`  - ${a}`, 'dim');
+      });
+    } else {
+      log(`\nAvailable actions for ${resource}:`, 'cyan');
+      Object.entries(hints[resource]).forEach(([a, hint]) => {
+        log(`  ${a.padEnd(12)} ${hint.substring(0, 60)}...`, 'dim');
+      });
+    }
+  } else if (resource) {
+    log(`\n❓ Unknown resource "${resource}"`, 'red');
+    log('Available resources: persona, post, feed, chat', 'yellow');
+  }
 }
 
 async function main() {
   const args = process.argv.slice(2);
   
-  if (args.length === 0 || args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
+  if (args.length === 0) {
+    showQuickRef();
+    return;
+  }
+  
+  if (args[0] === 'help' || args[0] === '--help' || args[0] === '-h') {
     showHelp();
     return;
   }
@@ -724,6 +768,12 @@ async function main() {
   const resource = args[0];
   const action = args[1];
   const { positional, options } = parseArgs(args.slice(2));
+  
+  // 如果没有 action，显示该 resource 的提示
+  if (!action) {
+    showCommandHints(resource);
+    return;
+  }
   
   try {
     switch (resource) {
@@ -735,7 +785,9 @@ async function main() {
           case 'update': await personaCommands.update(positional[0], options); break;
           case 'delete': await personaCommands.delete(positional[0], options.force); break;
           case 'search': await personaCommands.search(positional[0]); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
@@ -746,36 +798,23 @@ async function main() {
           case 'create': await postCommands.create(options); break;
           case 'update': await postCommands.update(positional[0], options); break;
           case 'delete': await postCommands.delete(positional[0], options.force); break;
-          default: error(`Unknown action: ${action}`);
-        }
-        break;
-        
-      case 'arc':
-        switch (action) {
-          case 'list': await arcCommands.list(options); break;
-          case 'get': await arcCommands.get(positional[0]); break;
-          case 'create': await arcCommands.create(options); break;
-          case 'update': await arcCommands.update(positional[0], options); break;
-          case 'delete': await arcCommands.delete(positional[0], options.force); break;
-          default: error(`Unknown action: ${action}`);
-        }
-        break;
-        
-      case 'pair':
-        switch (action) {
-          case 'list': await pairCommands.list(); break;
-          case 'create': await pairCommands.create(options); break;
-          case 'delete': await pairCommands.delete(positional[0]); break;
-          default: error(`Unknown action: ${action}`);
+          case 'comments': await postCommands.comments(positional[0]); break;
+          case 'likes': await postCommands.likes(positional[0]); break;
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
       case 'feed':
         switch (action) {
+          case 'list': await feedCommands.list(options); break;
           case 'cold-start': await feedCommands.coldStart(options); break;
           case 'plan-day': await feedCommands.planDay(); break;
           case 'run': await feedCommands.run(); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
@@ -783,12 +822,15 @@ async function main() {
         switch (action) {
           case 'group-run': await chatCommands.groupRun(); break;
           case 'proactive-run': await chatCommands.proactiveRun(); break;
-          default: error(`Unknown action: ${action}`);
+          default: 
+            error(`Unknown action: ${action}`);
+            showCommandHints(resource, action);
         }
         break;
         
       default:
         error(`Unknown resource: ${resource}`);
+        showCommandHints();
         showHelp();
     }
   } catch (err) {
