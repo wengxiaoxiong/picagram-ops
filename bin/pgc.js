@@ -505,10 +505,12 @@ const feedCommands = {
   async list(options = {}) {
     const limit = options.limit ? Number(options.limit) : 20;
     const seed = options.seed || Date.now().toString();
+    const offset = options.offset ? Number(options.offset) : 0;
     
     const result = await apiCall('GET', '/api/internal/feed', null, {
       seed,
       limit,
+      offset,
     });
     
     if (!result.ok) {
@@ -529,15 +531,21 @@ const feedCommands = {
     log('-'.repeat(100), 'dim');
     
     for (const item of result.items) {
-      const personaName = (item.persona?.displayName || 'Unknown').padEnd(22).substring(0, 22);
-      const likeCount = String(item.post?.likeCount || 0).padStart(3);
-      const commentCount = String(item.post?.commentCount || 0).padStart(3);
-      const content = item.post?.caption?.substring(0, 50).padEnd(50) || '';
+      // 兼容两种 API 响应格式
+      const personaName = (item.personaName || item.persona?.displayName || 'Unknown').padEnd(22).substring(0, 22);
+      const likeCount = String(item.likesCount || item.post?.likeCount || 0).padStart(3);
+      const commentCount = String(item.commentsCount || item.post?.commentCount || 0).padStart(3);
+      const content = (item.caption || item.post?.caption || '').substring(0, 50).padEnd(50);
       
       log(`${personaName} | ${likeCount} | ${commentCount} | ${content}`, 'dim');
     }
     
-    log(`\n${colors.dim}Total: ${result.items.length} posts${colors.reset}`);
+    log(`\n${colors.dim}Showing ${result.items.length} posts (offset: ${offset})${colors.reset}`);
+    
+    // 显示分页信息
+    if (result.nextOffset !== undefined && result.nextOffset !== null) {
+      log(`${colors.dim}Next: --offset ${result.nextOffset}${colors.reset}`);
+    }
   },
 
   async coldStart(options = {}) {
@@ -697,7 +705,7 @@ ${colors.bright}Resources:${colors.reset}
     likes <id>                           View likes
 
   ${colors.cyan}feed${colors.reset}       Feed operations
-    list [--limit]                       List homepage feed
+    list [--limit] [--offset] [--seed]   List homepage feed with pagination
     cold-start [--count] [--prompt]      Trigger cold start
     plan-day                             Plan day for personas
     run                                  Run feed jobs
@@ -724,6 +732,8 @@ ${colors.bright}Examples:${colors.reset}
   pgc post create --persona-id cm123xxx --brief "Share a secret"
   pgc post comments cm456xxx
   pgc feed list
+  pgc feed list --limit 20 --offset 20     # Page 2
+  pgc feed list --seed 12345               # Fixed random seed
 `);
 }
 
@@ -748,7 +758,7 @@ function showCommandHints(resource, action) {
       likes: 'pgc post likes <post-id>',
     },
     feed: {
-      list: 'pgc feed list [--limit 20]',
+      list: 'pgc feed list [--limit 20] [--offset 0] [--seed xxx]',
       'cold-start': 'pgc feed cold-start [--count 5] [--prompt "xxx"]',
       'plan-day': 'pgc feed plan-day',
       run: 'pgc feed run',
