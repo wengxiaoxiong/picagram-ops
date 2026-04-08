@@ -1,66 +1,84 @@
 #!/bin/bash
-# Picagram CLI 全局安装脚本
+# Picagram CLI - Install/Update Script
+# Usage: ./install.sh [install|update]
 
 set -e
 
-echo "🚀 Installing Picagram CLI (pgc)..."
-
-# 检查 Node.js
-if ! command -v node &> /dev/null; then
-    echo "❌ Node.js is required but not installed."
-    echo "Please install Node.js 18+ first: https://nodejs.org/"
-    exit 1
-fi
-
-NODE_VERSION=$(node --version | cut -d'v' -f2 | cut -d'.' -f1)
-if [ "$NODE_VERSION" -lt 18 ]; then
-    echo "❌ Node.js 18+ is required. Current version: $(node --version)"
-    exit 1
-fi
-
-echo "✓ Node.js $(node --version)"
-
-# 获取脚本所在目录
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI_SOURCE="$SCRIPT_DIR/bin/pgc.js"
+CLI_TARGET="$HOME/.local/bin/pgc"
 
-# 创建全局 bin 目录（如果不存在）
-GLOBAL_BIN="$HOME/.local/bin"
-mkdir -p "$GLOBAL_BIN"
+# 检测操作模式
+MODE="${1:-install}"
 
-# 复制 CLI 到全局 bin
-cp "$SCRIPT_DIR/bin/pgc.js" "$GLOBAL_BIN/pgc"
-chmod +x "$GLOBAL_BIN/pgc"
-
-echo "✓ CLI installed to $GLOBAL_BIN/pgc"
-
-# 添加到 PATH
-if [[ ":$PATH:" != *":$GLOBAL_BIN:"* ]]; then
-    echo ""
-    echo "⚠️  Please add the following to your shell profile (~/.bashrc or ~/.zshrc):"
-    echo ""
-    echo "    export PATH=\"$GLOBAL_BIN:\$PATH\""
-    echo ""
-    echo "Then run: source ~/.bashrc (or source ~/.zshrc)"
+if [ "$MODE" = "install" ]; then
+    echo "🔧 Installing Picagram CLI..."
+elif [ "$MODE" = "update" ]; then
+    echo "🔄 Updating Picagram CLI..."
 else
-    echo "✓ $GLOBAL_BIN is already in PATH"
+    echo "Usage: $0 [install|update]"
+    echo "  install - First time installation (default)"
+    echo "  update  - Update to latest version"
+    exit 1
 fi
 
-# 检查环境变量
-echo ""
-echo "🔧 Configuration:"
-if [ -z "$PICAGRAM_API_KEY" ]; then
-    echo "⚠️  PICAGRAM_API_KEY is not set"
-    echo "   Add to your shell profile: export PICAGRAM_API_KEY=\"your-api-key\""
+# 检查源文件是否存在
+if [ ! -f "$CLI_SOURCE" ]; then
+    echo "❌ Error: CLI source not found at $CLI_SOURCE"
+    echo "   Make sure you're running this from the picagram-ops directory"
+    exit 1
+fi
+
+# 创建目标目录
+mkdir -p "$HOME/.local/bin"
+
+# 备份旧版本（如果是更新）
+if [ "$MODE" = "update" ] && [ -f "$CLI_TARGET" ]; then
+    BACKUP_FILE="$CLI_TARGET.backup.$(date +%Y%m%d%H%M%S)"
+    cp "$CLI_TARGET" "$BACKUP_FILE"
+    echo "📦 Backed up old version to: $BACKUP_FILE"
+fi
+
+# 复制 CLI 文件
+cp "$CLI_SOURCE" "$CLI_TARGET"
+chmod +x "$CLI_TARGET"
+
+# 检查 PATH
+if [[ ":$PATH:" != *":$HOME/.local/bin:"* ]]; then
+    echo ""
+    echo "⚠️  Warning: ~/.local/bin is not in your PATH"
+    echo "   Add this to your ~/.bashrc or ~/.zshrc:"
+    echo '   export PATH="$HOME/.local/bin:$PATH"'
+    echo ""
+fi
+
+# 创建 .env 文件（如果不存在）
+ENV_FILE="$SCRIPT_DIR/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    cat > "$ENV_FILE" << 'EOF'
+# Picagram CLI Configuration
+PICAGRAM_API_KEY=your_api_key_here
+PICAGRAM_BASE_URL=https://picagram.ai
+EOF
+    echo "✅ Created $ENV_FILE"
+    echo "   Please edit it with your actual API key"
 else
-    echo "✓ PICAGRAM_API_KEY is set"
+    echo "✅ $ENV_FILE already exists (kept existing config)"
+fi
+
+# 显示版本信息
+if command -v pgc &> /dev/null; then
+    echo ""
+    echo "📋 Installed commands:"
+    echo "  pgc --help           Show help"
+    echo "  pgc persona list     List all personas"
+    echo "  pgc post list        List all posts"
+    echo "  pgc feed list        Show homepage feed"
 fi
 
 echo ""
-echo "🎉 Installation complete!"
-echo ""
-echo "Quick start:"
-echo "  pgc              # Show quick reference"
-echo "  pgc --help       # Show full help"
-echo "  pgc persona list # List all personas"
-echo ""
-echo "Documentation: https://github.com/wengxiaoxiong/picagram-ops/blob/master/CLI-README.md"
+if [ "$MODE" = "install" ]; then
+    echo "✅ Installation complete!"
+else
+    echo "✅ Update complete!"
+fi
