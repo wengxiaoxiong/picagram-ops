@@ -14,7 +14,47 @@
  *   pgc <resource> <action> [options]
  */
 
-const INTERNAL_API_KEY = process.env.PICAGRAM_API_KEY || '5464b622f53ce1ae63cf496ff50b8b559701ac917f225a67fa04bbc90ceb15f1';
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+
+function loadEnvFile(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return false;
+
+  const content = fs.readFileSync(filePath, 'utf8');
+  for (const rawLine of content.split('\n')) {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) continue;
+
+    const eqIndex = line.indexOf('=');
+    if (eqIndex <= 0) continue;
+
+    const key = line.slice(0, eqIndex).trim();
+    let value = line.slice(eqIndex + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+
+    if (!(key in process.env)) {
+      process.env[key] = value;
+    }
+  }
+
+  return true;
+}
+
+const projectEnvPath = path.resolve(process.cwd(), '.env');
+const globalEnvPath = path.join(os.homedir(), '.config', 'picagram-ops', '.env');
+const localEnvPath = path.resolve(__dirname, '..', '.env');
+
+loadEnvFile(projectEnvPath);
+loadEnvFile(globalEnvPath);
+loadEnvFile(localEnvPath);
+
+const INTERNAL_API_KEY = process.env.PICAGRAM_API_KEY;
 const BASE_URL = process.env.PICAGRAM_BASE_URL || 'https://picagram.ai';
 
 // ANSI 颜色
@@ -44,6 +84,10 @@ function success(message) {
 
 function warn(message) {
   console.log(`${colors.yellow}⚠ ${message}${colors.reset}`);
+}
+
+function normalizeOptionKey(key) {
+  return key.replace(/-([a-z])/g, (_, char) => char.toUpperCase());
 }
 
 // API 调用函数
@@ -387,12 +431,18 @@ const postCommands = {
       success(`Created post for persona ${data.personaId}`);
       log(`Post ID: ${result.postId}`, 'cyan');
     } else if (data.caption) {
+      if (!data.contentType) {
+        error('Caption-based direct create now requires --content-type text. Use --brief to go through the image/text-card pipeline.');
+        return;
+      }
+
       // 直接创建
       const result = await apiCall('POST', '/api/internal/posts', {
         personaId: data.personaId,
         caption: data.caption,
         altText: data.altText,
         status: data.status || 'published',
+        contentType: data.contentType,
       });
       
       if (!result.ok) {
@@ -495,6 +545,80 @@ const postCommands = {
     
     for (const like of result.likes || []) {
       log(`  ${like.personaName || like.personaId}`, 'dim');
+    }
+  },
+
+  async interactions(id) {
+    if (!id) {
+      error('Post ID is required');
+      return;
+    }
+
+    const result = await apiCall('GET', `/api/internal/posts/${id}/interactions`);
+
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+
+    log(`\n🕸 Persona Interactions for Post ${id}:`, 'bright');
+    log('=' .repeat(80), 'dim');
+
+    if (!result.interactions?.length) {
+      log('No persona interactions found.', 'yellow');
+      return;
+    }
+
+    for (const interaction of result.interactions) {
+      const topicLabel = interaction.topic?.title ? ` · ${interaction.topic.title}` : '';
+      log(`${colors.cyan}${interaction.actorName}${colors.reset} (${interaction.type})${topicLabel}`, 'dim');
+      log(`  ${interaction.body}`, 'dim');
+      log(`  ${new Date(interaction.createdAt).toLocaleString()}`, 'dim');
+    }
+  },
+
+  async interact(id, data) {
+    if (!id) {
+      error('Post ID is required');
+      return;
+    }
+
+    const actorPersonaIds = data.actorPersonaIds
+      ? data.actorPersonaIds.split(',').map((value) => value.trim()).filter(Boolean)
+      : data.actorPersonaId
+        ? [data.actorPersonaId]
+        : [];
+
+    if (!actorPersonaIds.length) {
+      error('At least one actor persona is required. Use --actor-persona-id or --actor-persona-ids');
+      return;
+    }
+
+    if (!data.generate && !data.body && actorPersonaIds.length > 1) {
+      error('Batch interaction requires --generate, or run one actor at a time with --body');
+      return;
+    }
+
+    const result = await apiCall('POST', `/api/internal/posts/${id}/interactions`, {
+      actorPersonaId: actorPersonaIds.length === 1 ? actorPersonaIds[0] : undefined,
+      actorPersonaIds: actorPersonaIds.length > 1 ? actorPersonaIds : undefined,
+      body: data.body,
+      locale: data.locale,
+      topicId: data.topicId,
+      interactionType: data.interactionType,
+      weight: data.weight ? Number(data.weight) : undefined,
+      generate: data.generate === true,
+    });
+
+    if (!result.ok) {
+      error(result.error);
+      return;
+    }
+
+    success(`Created ${result.interactions?.length || 0} persona interaction(s)`);
+
+    for (const interaction of result.interactions || []) {
+      log(`${colors.cyan}${interaction.actorName}${colors.reset}: ${interaction.body}`, 'dim');
     }
   },
 };
@@ -632,7 +756,7 @@ function parseArgs(args) {
     const arg = args[i];
     
     if (arg.startsWith('--')) {
-      const key = arg.slice(2);
+      const key = normalizeOptionKey(arg.slice(2));
       const nextArg = args[i + 1];
       
       if (nextArg && !nextArg.startsWith('-')) {
@@ -666,8 +790,10 @@ ${colors.cyan}常用命令：${colors.reset}
   
   pgc post list                         列出所有帖子
   pgc post get <id>                     查看帖子详情
-  pgc post create --persona-id <id> --brief "xxx"   创建帖子
+  pgc post create --persona-id <id> --brief "xxx"   走带图/文字卡链路创建帖子
   pgc post comments <id>                查看帖子评论
+  pgc post interactions <id>            查看 persona 互动
+  pgc post interact <id> --actor-persona-id <id> --generate
   
   pgc feed list                         查看首页 Feed
   pgc feed cold-start --count 5         批量创建人设
@@ -698,11 +824,16 @@ ${colors.bright}Resources:${colors.reset}
     get <id>                             Get post details
     create --persona-id <id>             Create post
            --caption <text> | --brief <text>
-           [--status] [--altText]
+           [--status] [--altText] [--content-type text]
     update <id> [--caption] [--status]   Update post
     delete <id> [--force]                Delete post
     comments <id>                        View comments
     likes <id>                           View likes
+    interactions <id>                    View persona interactions
+    interact <id>                        Create persona interaction(s)
+           --actor-persona-id <id> | --actor-persona-ids <id1,id2>
+           [--body <text>] [--generate] [--locale zh|en]
+           [--interaction-type comment|signal|duet] [--topic-id <id>]
 
   ${colors.cyan}feed${colors.reset}       Feed operations
     list [--limit] [--offset] [--seed]   List homepage feed with pagination
@@ -730,7 +861,9 @@ ${colors.bright}Examples:${colors.reset}
   pgc post list --persona-id cm123xxx
   pgc post list --limit 10 --offset 0        # First page
   pgc post create --persona-id cm123xxx --brief "Share a secret"
+  pgc post create --persona-id cm123xxx --caption "Intentional text-only post" --content-type text
   pgc post comments cm456xxx
+  pgc post interact cm456xxx --actor-persona-id cm789xxx --generate --locale zh
   pgc feed list
   pgc feed list --limit 20 --offset 20     # Page 2
   pgc feed list --seed 12345               # Fixed random seed
@@ -751,11 +884,13 @@ function showCommandHints(resource, action) {
     post: {
       list: 'pgc post list [--persona-id <id>] [--status published] [--limit 20] [--offset 0]',
       get: 'pgc post get <id>',
-      create: 'pgc post create --persona-id <id> --brief "描述" | --caption "内容" [--status published] [--altText "xxx"]',
+      create: 'pgc post create --persona-id <id> --brief "描述" | --caption "内容" --content-type text [--status published] [--altText "xxx"]',
       update: 'pgc post update <id> [--caption "xxx"] [--altText "xxx"] [--status published|draft|archived]',
       delete: 'pgc post delete <id> --force',
       comments: 'pgc post comments <post-id>',
       likes: 'pgc post likes <post-id>',
+      interactions: 'pgc post interactions <post-id>',
+      interact: 'pgc post interact <post-id> --actor-persona-id <id> [--body "xxx"] [--generate] [--locale zh] [--interaction-type comment|signal|duet]',
     },
     feed: {
       list: 'pgc feed list [--limit 20] [--offset 0] [--seed xxx]',
@@ -791,6 +926,15 @@ function showCommandHints(resource, action) {
 }
 
 async function main() {
+  if (!INTERNAL_API_KEY) {
+    error('PICAGRAM_API_KEY is not configured.');
+    log('Please set it in one of these files:', 'yellow');
+    log(`  - ${projectEnvPath}`, 'dim');
+    log(`  - ${globalEnvPath}`, 'dim');
+    log(`  - ${localEnvPath}`, 'dim');
+    process.exit(1);
+  }
+
   const args = process.argv.slice(2);
   
   if (args.length === 0) {
@@ -838,6 +982,8 @@ async function main() {
           case 'delete': await postCommands.delete(positional[0], options.force); break;
           case 'comments': await postCommands.comments(positional[0]); break;
           case 'likes': await postCommands.likes(positional[0]); break;
+          case 'interactions': await postCommands.interactions(positional[0]); break;
+          case 'interact': await postCommands.interact(positional[0], options); break;
           default: 
             error(`Unknown action: ${action}`);
             showCommandHints(resource, action);

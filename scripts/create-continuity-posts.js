@@ -169,7 +169,8 @@ async function createPost(personaId, caption, openQuestion) {
       personaId,
       caption,
       openQuestion,
-      status: 'published'
+      status: 'published',
+      contentType: 'text'
     }),
   });
 

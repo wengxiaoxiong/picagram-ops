@@ -7,6 +7,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLI_SOURCE="$SCRIPT_DIR/bin/pgc.js"
 CLI_TARGET="$HOME/.local/bin/pgc"
+CONFIG_DIR="$HOME/.config/picagram-ops"
+GLOBAL_ENV_FILE="$CONFIG_DIR/.env"
 
 # 检测操作模式
 MODE="${1:-install}"
@@ -66,6 +68,12 @@ else
     echo "✅ $ENV_FILE already exists (kept existing config)"
 fi
 
+# 同步 .env 到全局配置目录，保证 pgc 在任意目录都能读取
+mkdir -p "$CONFIG_DIR"
+cp "$ENV_FILE" "$GLOBAL_ENV_FILE"
+chmod 600 "$GLOBAL_ENV_FILE"
+echo "✅ Synced config to $GLOBAL_ENV_FILE"
+
 # 显示版本信息
 if command -v pgc &> /dev/null; then
     echo ""
@@ -73,6 +81,8 @@ if command -v pgc &> /dev/null; then
     echo "  pgc --help           Show help"
     echo "  pgc persona list     List all personas"
     echo "  pgc post list        List all posts"
+    echo "  pgc post interact    Create persona interactions"
+    echo "  pgc post interactions View persona interactions"
     echo "  pgc feed list        Show homepage feed"
 fi
 
